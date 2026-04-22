@@ -199,6 +199,38 @@ function _tmapSubwayCode(color, route) {
 }
 
 async function getTransitRoutes(startX, startY, endX, endY) {
+  // 1) 로컬 지하철 라우터(OSM 기반) 와 2) 서버 버스 라우터(T-data 기반) 를 병렬 호출해 합친다.
+  //    — 둘 다 getTransitRoutes 와 동일 shape 반환.
+  //    — 실패/빈값 은 폴백 체인(원본 TMAP) 으로.
+  try {
+    const [sub, bus] = await Promise.all([
+      (async () => {
+        if (typeof window.routeSubway !== 'function') return []
+        try { return (await window.routeSubway(+startX, +startY, +endX, +endY)) || [] }
+        catch (e) { console.warn('[SUBWAY_ROUTER]', e.message); return [] }
+      })(),
+      (async () => {
+        try {
+          const data = await _fetchJson(`${API_BASE}/bus/transit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ startX, startY, endX, endY, radius: 600 }),
+            signal: _timeout(45000), // cold start 시 route-node 일괄 fetch 가 오래 걸릴 수 있음
+          }, 'BUS_TRANSIT')
+          return Array.isArray(data) ? data : []
+        } catch (e) { console.warn('[BUS_ROUTER]', e.message); return [] }
+      })(),
+    ])
+
+    const merged = [...sub, ...bus].filter(r => r && Array.isArray(r.subPaths))
+    if (merged.length) {
+      merged.sort((a, b) => (a.totalTime || 0) - (b.totalTime || 0))
+      return merged
+    }
+  } catch (e) {
+    console.warn('[TRANSIT_MERGE]', e.message)
+  }
+  // (이하 원본 TMAP 경로 — 로컬 라우터 실패 시만 호출. 실제론 거의 안 닿음)
   try {
     const data = await _fetchJson(`${API_BASE}/tmap/transit`, {
       method: 'POST',
@@ -221,20 +253,32 @@ async function getTransitRoutes(startX, startY, endX, endY) {
         const tt = leg.mode === 'WALK' ? 3
                  : (leg.mode === 'SUBWAY' || leg.mode === 'METRO_RAIL') ? 1 : 2
 
+        // WKT LINESTRING 또는 공백 구분 "lon,lat lon,lat ..." 모두 허용
+        const _parseLS = (ls) => {
+          const out = []
+          if (!ls) return out
+          const inner = String(ls).replace(/^LINESTRING\s*\(/i, '').replace(/\)$/, '')
+          for (const pair of inner.split(',')) {
+            const [x, y] = pair.trim().split(/\s+/).map(parseFloat)
+            if (isFinite(x) && isFinite(y) && x && y) out.push({ x, y, slope: 0 })
+          }
+          return out
+        }
+
         const passCoords = (() => {
           if (tt === 3) {
+            // 도보: steps[].linestring 연결
             const pts = []
             for (const step of (leg.steps || [])) {
-              const ls = step.linestring || step.lineString || ''
-              if (!ls) continue
-              const inner = ls.replace(/^LINESTRING\s*\(/i, '').replace(/\)$/, '')
-              for (const pair of inner.split(',')) {
-                const [x, y] = pair.trim().split(/\s+/).map(parseFloat)
-                if (isFinite(x) && isFinite(y) && x && y) pts.push({ x, y, slope: 0 })
-              }
+              pts.push(..._parseLS(step.linestring || step.lineString))
             }
             if (pts.length >= 2) return pts
+          } else {
+            // 지하철/버스: TMAP passShape.linestring 이 실제 노선 경로
+            const shapePts = _parseLS(leg.passShape?.linestring || leg.passShape?.lineString)
+            if (shapePts.length >= 2) return shapePts
           }
+          // 폴백: 정류장 좌표만 (직선)
           return (leg.passStopList?.stationList || [])
             .map(s => ({ x: parseFloat(s.lon || s.x || '0'), y: parseFloat(s.lat || s.y || '0') }))
             .filter(c => c.x && c.y)

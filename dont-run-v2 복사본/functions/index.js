@@ -24,11 +24,17 @@ const SINHODUNG_KEY        = defineSecret('SINHODUNG_KEY')
 const KAKAO_REST_KEY     = defineSecret('KAKAO_REST_API_KEY')
 const KAKAO_MAP_API_KEY  = defineSecret('KAKAO_MAP_API_KEY')
 const KAKAO_MAP_APP_KEY  = defineSecret('KAKAO_MAP_APP_KEY')
+// 서울교통빅데이터플랫폼 (T-data). 지하철/버스 마스터 공용 키.
+const TDATA_KEY          = defineSecret('SEOUL_SUBWAY_GEOM')
+// 공공데이터포털 "서울특별시_노선정보조회 서비스" 키 (ws.bus.go.kr/busRouteInfo 용)
+// 승인 후 해당 키를 .env 또는 Secret Manager 에 BUS_ROUTE_INFO_KEY 로 등록.
+const BUS_ROUTE_INFO_KEY = defineSecret('BUS_ROUTE_INFO_KEY')
 
 const ALL_SECRETS = [
   TMAP_TRANSPORTATION, SEOUL_BUS_KEY, SUBWAY_ARR_KEY,
   SUBWAY_CROWD_KEY, SINHODUNG_KEY,
   KAKAO_REST_KEY, KAKAO_MAP_API_KEY, KAKAO_MAP_APP_KEY,
+  TDATA_KEY, BUS_ROUTE_INFO_KEY,
 ]
 
 // ── 키 헬퍼: 에뮬레이터에서는 process.env, 프로덕션은 Secret.value() ──────
@@ -134,6 +140,13 @@ async function route(req, res) {
     if (path === 'signal')           return await handleSignal(req, res)
     if (path === 'kakao/search')     return await handleKakaoSearch(req, res)
     if (path === 'kakao/rgeo')       return await handleKakaoRgeo(req, res)
+    if (path === 'tdata/bus/routes')       return await handleTdataBusRoutes(req, res)
+    if (path === 'tdata/bus/route-nodes')  return await handleTdataBusRouteNodes(req, res)
+    if (path === 'tdata/bus/stops-near')   return await handleTdataBusStopsNear(req, res)
+    if (path === 'tdata/bus/stops')        return await handleTdataBusStops(req, res)
+    if (path === 'tdata/bus/coords')       return await handleTdataBusCoords(req, res)
+    if (path === 'bus/path')               return await handleBusRoutePath(req, res)
+    if (path === 'bus/transit')            return await handleBusTransit(req, res)
     return sendErr(res, 404, `Unknown endpoint: ${path}`)
   } catch (e) {
     console.error('[route]', path, e && e.message)
@@ -284,7 +297,10 @@ async function handleKakaoSearch(req, res) {
 
   const url = `https://dapi.kakao.com/v2/local/search/keyword.json?query=${encodeURIComponent(q)}&size=8`
   const { status, json } = await fetchJson(
-    url, { headers: { Authorization: `KakaoAK ${key}` } }, 6000,
+    url, { headers: {
+      Authorization: `KakaoAK ${key}`,
+      KA: 'sdk/1.0 os/javascript lang/ko-KR origin/https://gen-lang-client-0940345328.web.app',
+    } }, 6000,
   )
   return sendJson(res, status, json || { error: 'empty response' })
 }
@@ -302,15 +318,424 @@ async function handleKakaoRgeo(req, res) {
 
   const url = `https://dapi.kakao.com/v2/local/geo/coord2address.json?x=${lng}&y=${lat}`
   const { status, json } = await fetchJson(
-    url, { headers: { Authorization: `KakaoAK ${key}` } }, 5000,
+    url, { headers: {
+      Authorization: `KakaoAK ${key}`,
+      KA: 'sdk/1.0 os/javascript lang/ko-KR origin/https://gen-lang-client-0940345328.web.app',
+    } }, 5000,
   )
   return sendJson(res, status, json || { error: 'empty response' })
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 9. T-data (서울교통빅데이터플랫폼) 버스 마스터 프록시
+//    공용 apikey 로 게이트웨이 호출. 서버 측에 인메모리 캐시를 두어
+//    같은 cold-start 인스턴스에서는 마스터를 한 번만 받는다.
+//
+//    GET /api/tdata/bus/routes            — 서울 시내버스 노선 마스터 (간선/지선/순환/마을/광역서울/공항)
+//    GET /api/tdata/bus/route-nodes?routeId=…  — 노선별 정류장 순서
+//    GET /api/tdata/bus/stops             — 전체 정류장 좌표 마스터
+//    GET /api/tdata/bus/coords?routeId=…  — 노선 폴리라인 (권한 풀리면 사용)
+// ══════════════════════════════════════════════════════════════════════
+const TDATA_BASE = 'https://t-data.seoul.go.kr/apig/apiman-gateway/tapi'
+const SEOUL_BUS_TYPES = new Set(['간선', '지선', '순환', '마을', '광역(서울)', '공항'])
+const TDATA_CACHE_TTL_MS = 60 * 60 * 1000 // 1 시간
+
+// 인스턴스-로컬 캐시 (cold-start 수명). Secret Manager 콜드 스타트 시 자연 재로드.
+const tdataCache = {
+  routes: null,       // { t: epochMs, data: [...] }
+  stops:  null,
+  routeNodes: new Map(), // routeId -> { t, data }
+}
+
+async function tdataFetch(service, params) {
+  const key = readKey(TDATA_KEY, 'SEOUL_SUBWAY_GEOM')
+  if (!key) throw new Error('TDATA key not configured')
+  const qs = new URLSearchParams({ apikey: key, ...(params || {}) })
+  const url = `${TDATA_BASE}/${service}/1.0?${qs.toString()}`
+  const { status, json, text } = await fetchJson(url, {}, 12000)
+  if (status !== 200) {
+    const err = new Error(`TDATA ${service} ${status}: ${text || JSON.stringify(json)}`)
+    err.status = status
+    throw err
+  }
+  return json
+}
+
+function cacheFresh(entry) {
+  return entry && (Date.now() - entry.t) < TDATA_CACHE_TTL_MS
+}
+
+async function handleTdataBusRoutes(req, res) {
+  if (!cacheFresh(tdataCache.routes)) {
+    const all = await tdataFetch('TaimsTaimsTbisMsRoute')
+    const seoul = (all || []).filter(r => SEOUL_BUS_TYPES.has(r.routeTy))
+    tdataCache.routes = { t: Date.now(), data: seoul }
+  }
+  res.set('Cache-Control', 'public, max-age=1800')
+  return sendJson(res, 200, tdataCache.routes.data)
+}
+
+async function handleTdataBusRouteNodes(req, res) {
+  const routeId = (req.query.routeId || '').trim()
+  if (!routeId) return sendErr(res, 400, 'missing routeId')
+
+  const cached = tdataCache.routeNodes.get(routeId)
+  if (cacheFresh(cached)) {
+    res.set('Cache-Control', 'public, max-age=1800')
+    return sendJson(res, 200, cached.data)
+  }
+  const data = await tdataFetch('TaimsTaimsTbisMsRouteNode', { routeId })
+  tdataCache.routeNodes.set(routeId, { t: Date.now(), data: data || [] })
+  // LRU 흉내: 1000개 초과 시 오래된 항목 제거
+  if (tdataCache.routeNodes.size > 1000) {
+    const firstKey = tdataCache.routeNodes.keys().next().value
+    tdataCache.routeNodes.delete(firstKey)
+  }
+  res.set('Cache-Control', 'public, max-age=1800')
+  return sendJson(res, 200, data || [])
+}
+
+async function loadStops() {
+  if (cacheFresh(tdataCache.stops)) return tdataCache.stops.data
+  const all = await tdataFetch('TaimsTaimsTbisMsSttn', { rowCnt: '100000', startRow: '1' })
+  // trim fields to reduce memory/payload
+  const slim = (all || []).map(s => ({
+    sttnId: s.sttnId,
+    sttnNm: s.sttnNm,
+    x: parseFloat(s.crdntX) || 0,
+    y: parseFloat(s.crdntY) || 0,
+  })).filter(s => s.x && s.y)
+  tdataCache.stops = { t: Date.now(), data: slim }
+  return slim
+}
+
+async function handleTdataBusStops(req, res) {
+  const data = await loadStops()
+  res.set('Cache-Control', 'public, max-age=1800')
+  return sendJson(res, 200, data)
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371, p = Math.PI/180
+  const dLat = (lat2-lat1)*p, dLon = (lon2-lon1)*p
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*p)*Math.cos(lat2*p)*Math.sin(dLon/2)**2
+  return 2*R*Math.asin(Math.sqrt(a))
+}
+
+async function handleTdataBusStopsNear(req, res) {
+  const lon = parseFloat(req.query.lon)
+  const lat = parseFloat(req.query.lat)
+  const radiusM = parseInt(req.query.radius || '500', 10)
+  if (!isFinite(lon) || !isFinite(lat)) return sendErr(res, 400, 'missing lon/lat')
+
+  const stops = await loadStops()
+  const maxKm = radiusM / 1000
+  const near = []
+  for (const s of stops) {
+    // quick bbox cull (1 deg ≈ 111km)
+    if (Math.abs(s.y - lat) > maxKm/110 || Math.abs(s.x - lon) > maxKm/90) continue
+    const d = haversineKm(lat, lon, s.y, s.x)
+    if (d <= maxKm) near.push({ ...s, km: +d.toFixed(3) })
+  }
+  near.sort((a, b) => a.km - b.km)
+  res.set('Cache-Control', 'public, max-age=1800')
+  return sendJson(res, 200, near.slice(0, 30))
+}
+
+// ── 버스 경로 라우팅 (직결 전용, 환승 없음) ────────────────────────────
+//
+//  POST /api/bus/transit  body: { startX, startY, endX, endY, radius? }
+//  반환: getTransitRoutes 와 동일한 shape 의 배열
+//  [{
+//    totalTime, transferCount: 0, subPaths: [
+//      { trafficType:3(도보), startName:'출발지', endName:<승차정류장>, ... passCoords:[] },
+//      { trafficType:2(버스), lane:{name, busNo, arsId}, startName:<승차>, endName:<하차>,
+//        passCoords:[{x,y}...] },       // 정류장 순차 연결선
+//      { trafficType:3(도보), endName:'도착지', ... },
+//    ],
+//  }, ...]
+//
+//  전략:
+//    1) start/end 반경 내 정류장 후보 (각 N개)
+//    2) 필요한 노선의 route-node 를 lazy 로 fetch (인스턴스 캐시)
+//    3) 공통 routeId 중 start.sttnSn < end.sttnSn (정방향) 필터
+//    4) 총 소요시간 = 도보(출발→승차) + 버스(링크 누적거리/속도) + 도보(하차→도착)
+// ──────────────────────────────────────────────────────────────────────
+const BUS_AVG_SPEED_KMH = 18   // 서울 시내버스 평균
+const WALK_SPEED_KMH    = 4.5
+const BUS_MAX_RESULTS   = 3
+
+async function fetchRouteNodes(routeId) {
+  const cached = tdataCache.routeNodes.get(routeId)
+  if (cacheFresh(cached)) return cached.data
+  const data = await tdataFetch('TaimsTaimsTbisMsRouteNode', { routeId })
+  tdataCache.routeNodes.set(routeId, { t: Date.now(), data: data || [] })
+  return data || []
+}
+
+// 동시성 제어 병렬 map
+async function parallelMap(items, limit, fn) {
+  const out = new Array(items.length)
+  let i = 0
+  const workers = new Array(Math.min(limit, items.length)).fill(0).map(async () => {
+    while (true) {
+      const idx = i++
+      if (idx >= items.length) return
+      try { out[idx] = await fn(items[idx], idx) }
+      catch (e) { out[idx] = { __err: e && e.message } }
+    }
+  })
+  await Promise.all(workers)
+  return out
+}
+
+async function handleBusTransit(req, res) {
+  if (req.method !== 'POST') return sendErr(res, 405, 'POST required')
+  const { startX, startY, endX, endY, radius } = req.body || {}
+  const sx = parseFloat(startX), sy = parseFloat(startY)
+  const ex = parseFloat(endX),   ey = parseFloat(endY)
+  if (![sx, sy, ex, ey].every(isFinite)) return sendErr(res, 400, 'missing coords')
+
+  const stops = await loadStops()
+  const routesAll = (cacheFresh(tdataCache.routes)
+    ? tdataCache.routes.data
+    : (tdataCache.routes = { t: Date.now(),
+        data: ((await tdataFetch('TaimsTaimsTbisMsRoute')) || [])
+              .filter(r => SEOUL_BUS_TYPES.has(r.routeTy)) }).data)
+  const routeById = new Map(routesAll.map(r => [r.routeId, r]))
+
+  const maxKm = (radius || 500) / 1000
+  const nearest = (x, y) => {
+    const out = []
+    for (const s of stops) {
+      if (Math.abs(s.y - y) > maxKm/110 || Math.abs(s.x - x) > maxKm/90) continue
+      const d = haversineKm(y, x, s.y, s.x)
+      if (d <= maxKm) out.push({ ...s, km: d })
+    }
+    out.sort((a, b) => a.km - b.km)
+    return out.slice(0, 8)
+  }
+  const startStops = nearest(sx, sy)
+  const endStops   = nearest(ex, ey)
+  if (!startStops.length || !endStops.length) return sendJson(res, 200, [])
+
+  // 후보 정류장들을 지나는 모든 route-node (lazy fetch).
+  // 문제: stop->routes 역인덱스가 없음 → 모든 서울 시내버스 route-node 를 훑어야 함.
+  // 최적화: 인스턴스 캐시에 있는 것 우선, 없는 것만 병렬 fetch.
+  // (첫 cold start 에 ~500 route * ~80 stops 페치 = 느림. 이후는 빠름.)
+  const allRouteIds = routesAll.map(r => r.routeId)
+  const allNodes = await parallelMap(allRouteIds, 20, async rid => {
+    const list = await fetchRouteNodes(rid).catch(() => [])
+    return { rid, list }
+  })
+
+  // stop(sttnId) -> [{routeId, sttnSn, linkDstncAcmtl}]
+  const stopRoutes = new Map()
+  for (const entry of allNodes) {
+    if (!entry || !entry.list) continue
+    for (const n of entry.list) {
+      const arr = stopRoutes.get(n.nodeId) || []
+      arr.push({ routeId: n.routeId, sttnSn: +n.sttnSn, dst: parseFloat(n.linkDstncAcmtl) || 0 })
+      stopRoutes.set(n.nodeId, arr)
+    }
+  }
+
+  const startMap = new Map()
+  for (const s of startStops) {
+    for (const r of (stopRoutes.get(s.sttnId) || [])) {
+      startMap.set(`${r.routeId}|${s.sttnId}`, { stop: s, ...r })
+    }
+  }
+
+  const candidates = []
+  for (const e of endStops) {
+    for (const r of (stopRoutes.get(e.sttnId) || [])) {
+      // 같은 노선, sttnSn(start) < sttnSn(end)
+      for (const [k, st] of startMap.entries()) {
+        if (st.routeId !== r.routeId) continue
+        if (st.sttnSn >= r.sttnSn) continue
+        const distKm = Math.max(0.1, (r.dst - st.dst) / 1000)
+        const busMin = (distKm / BUS_AVG_SPEED_KMH) * 60
+        const walkStartMin = (st.stop.km / WALK_SPEED_KMH) * 60
+        const walkEndMin   = (e.km / WALK_SPEED_KMH) * 60
+        const totalMin = walkStartMin + busMin + walkEndMin + 3 // 대기 3분 가정
+        candidates.push({
+          totalMin,
+          routeId: r.routeId,
+          route:   routeById.get(r.routeId),
+          startStop: st.stop, startSn: st.sttnSn,
+          endStop:   e,       endSn:   r.sttnSn,
+          distKm, busMin, walkStartMin, walkEndMin,
+        })
+      }
+    }
+  }
+  candidates.sort((a, b) => a.totalMin - b.totalMin)
+  const top = candidates.slice(0, BUS_MAX_RESULTS)
+  if (!top.length) return sendJson(res, 200, [])
+
+  // subPaths 조립 — 우선 "도로 shape 폴리라인" 시도, 실패 시 "정류장 연결선" 폴백
+  const result = await parallelMap(top, 3, async c => {
+    const [rn, roadPoly] = await Promise.all([
+      fetchRouteNodes(c.routeId).catch(() => []),
+      fetchBusRoutePath(c.routeId).catch(() => []),
+    ])
+    const sorted = rn.slice().sort((a, b) => +a.sttnSn - +b.sttnSn)
+    // 정류장 기반 폴백 라인
+    const stopLine = []
+    for (const n of sorted) {
+      const sn = +n.sttnSn
+      if (sn < c.startSn || sn > c.endSn) continue
+      const st = stops.find(s => s.sttnId === n.nodeId)
+      if (st) stopLine.push({ x: st.x, y: st.y, slope: 0 })
+    }
+    // 도로 shape slice 시도 — 성공 시 이걸 사용, 실패 시 stopLine
+    let pass = stopLine
+    if (roadPoly && roadPoly.length >= 2) {
+      const sliced = sliceBusPolyline(
+        roadPoly,
+        +c.startStop.x, +c.startStop.y,
+        +c.endStop.x,   +c.endStop.y,
+      )
+      if (sliced && sliced.length >= 2) {
+        pass = sliced.map(([x, y]) => ({ x, y, slope: 0 }))
+      }
+    }
+    const lane = {
+      name: c.route?.routeNm || c.routeId,
+      busNo: c.route?.routeNm || '',
+      subwayCode: '',
+      arsId: '',
+      type: c.route?.routeTy || '',
+    }
+    return {
+      totalTime: Math.round(c.totalMin),
+      transferCount: 0,
+      subPaths: [
+        {
+          trafficType: 3,
+          sectionTime: Math.max(1, Math.round(c.walkStartMin)),
+          distance: Math.round(c.startStop.km * 1000),
+          stationCount: 0,
+          startName: '출발지', endName: c.startStop.sttnNm,
+          startX: sx, startY: sy,
+          endX: c.startStop.x, endY: c.startStop.y,
+          passCoords: [], lane: { name: '도보' },
+        },
+        {
+          trafficType: 2,
+          sectionTime: Math.max(1, Math.round(c.busMin)),
+          distance: Math.round(c.distKm * 1000),
+          stationCount: c.endSn - c.startSn,
+          startName: c.startStop.sttnNm, endName: c.endStop.sttnNm,
+          startX: c.startStop.x, startY: c.startStop.y,
+          endX:   c.endStop.x,   endY:   c.endStop.y,
+          passCoords: pass, lane,
+        },
+        {
+          trafficType: 3,
+          sectionTime: Math.max(1, Math.round(c.walkEndMin)),
+          distance: Math.round(c.endStop.km * 1000),
+          stationCount: 0,
+          startName: c.endStop.sttnNm, endName: '도착지',
+          startX: c.endStop.x, startY: c.endStop.y,
+          endX: ex, endY: ey,
+          passCoords: [], lane: { name: '도보' },
+        },
+      ],
+    }
+  })
+
+  return sendJson(res, 200, result)
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 서울 노선정보조회(ws.bus.go.kr) getRoutePath 프록시
+//   GET /api/bus/path?routeId=100100472  → [[lon,lat], ...] (WGS84)
+//   "정류장 연결선" 이 아닌 "도로 따라가는 shape" 폴리라인을 내려준다.
+//   API 키: BUS_ROUTE_INFO_KEY (공공데이터포털 "서울특별시_노선정보조회").
+// ══════════════════════════════════════════════════════════════════════
+const busPathCache = createLRU(1000)
+const BUS_PATH_TTL_MS = 24 * 60 * 60 * 1000
+
+async function fetchBusRoutePath(routeId) {
+  if (!routeId) return []
+  const now = Date.now()
+  const cached = busPathCache.get(routeId)
+  if (cached && (now - cached.ts) < BUS_PATH_TTL_MS) return cached.data
+
+  const key = readKey(BUS_ROUTE_INFO_KEY, 'BUS_ROUTE_INFO_KEY')
+  if (!key) return []
+
+  const url = `http://ws.bus.go.kr/api/rest/busRouteInfo/getRoutePath` +
+    `?serviceKey=${encodeURIComponent(key)}&busRouteId=${encodeURIComponent(routeId)}`
+
+  try {
+    const { status, text } = await fetchText(url, {}, 8000)
+    if (status !== 200 || !text) return []
+    const coords = []
+    const blockRe = /<itemList>([\s\S]*?)<\/itemList>/g
+    let m
+    while ((m = blockRe.exec(text)) !== null) {
+      const block = m[1]
+      const gx = /<gpsX>([\d.\-]+)<\/gpsX>/.exec(block)
+      const gy = /<gpsY>([\d.\-]+)<\/gpsY>/.exec(block)
+      if (gx && gy) {
+        const lon = parseFloat(gx[1]), lat = parseFloat(gy[1])
+        if (Number.isFinite(lon) && Number.isFinite(lat)) coords.push([lon, lat])
+      }
+    }
+    busPathCache.set(routeId, { data: coords, ts: now })
+    return coords
+  } catch (e) {
+    console.warn('[fetchBusRoutePath]', routeId, e && e.message)
+    return []
+  }
+}
+
+// 폴리라인에서 (sx,sy)~(ex,ey) 사이 구간 슬라이스.
+// 각 엔드포인트에 가장 가까운 버텍스 인덱스를 찾고,
+// 두 인덱스 사이를 순방향으로 잘라 리턴. 2점 미만이면 null.
+function sliceBusPolyline(poly, sx, sy, ex, ey) {
+  if (!Array.isArray(poly) || poly.length < 2) return null
+  const d2 = (a, b) => { const dx = a[0] - b[0], dy = a[1] - b[1]; return dx*dx + dy*dy }
+  const S = [sx, sy], E = [ex, ey]
+  let iS = 0, iE = 0, bS = Infinity, bE = Infinity
+  for (let i = 0; i < poly.length; i++) {
+    const dS = d2(poly[i], S); if (dS < bS) { bS = dS; iS = i }
+    const dE = d2(poly[i], E); if (dE < bE) { bE = dE; iE = i }
+  }
+  if (iS === iE) return null
+  const [lo, hi] = iS < iE ? [iS, iE] : [iE, iS]
+  const slice = poly.slice(lo, hi + 1)
+  // 역방향이면 뒤집어서 방향 맞춤
+  if (iS > iE) slice.reverse()
+  return slice.length >= 2 ? slice : null
+}
+
+async function handleBusRoutePath(req, res) {
+  const routeId = String(req.query.routeId || '').trim()
+  if (!routeId) return sendErr(res, 400, 'missing routeId')
+  const coords = await fetchBusRoutePath(routeId)
+  res.set('Cache-Control', 'public, max-age=86400')
+  return sendJson(res, 200, coords)
+}
+
+async function handleTdataBusCoords(req, res) {
+  const routeId = (req.query.routeId || '').trim()
+  if (!routeId) return sendErr(res, 400, 'missing routeId')
+  // 페이징 지원 (스크린샷: rowCnt, startRow). 기본 1000 한번에.
+  const rowCnt   = req.query.rowCnt   || '1000'
+  const startRow = req.query.startRow || '1'
+  const data = await tdataFetch('BisTbisMsRouteCrdnt', { routeId, rowCnt, startRow })
+  res.set('Cache-Control', 'public, max-age=3600')
+  return sendJson(res, 200, data || [])
 }
 
 // ══════════════════════════════════════════════════════════════════════
 // Export — 단일 함수 `api` 가 /api/** 모두 처리
 // ══════════════════════════════════════════════════════════════════════
 exports.api = onRequest(
-  { secrets: ALL_SECRETS, cors: false, timeoutSeconds: 30, memory: '256MiB' },
+  { secrets: ALL_SECRETS, cors: false, timeoutSeconds: 120, memory: '1GiB' },
   route,
 )

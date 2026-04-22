@@ -267,7 +267,15 @@ async function _drawRoutePolys(segments, bounds) {
       }
       path = pts.map(p => _ll(p.y, p.x))
     } else {
-      const mid = (seg.passCoords||[]).filter(c=>+c.x&&+c.y)
+      // 지하철: 실제 노선 GeoJSON 에서 역 구간 slice 우선 시도
+      let mid = null
+      if (seg.type === 'subway' && typeof window.getSubwayPathCoords === 'function') {
+        try {
+          const geomPts = await window.getSubwayPathCoords(seg)
+          if (geomPts && geomPts.length >= 2) mid = geomPts
+        } catch (e) { /* ignore, fallback below */ }
+      }
+      if (!mid) mid = (seg.passCoords||[]).filter(c=>+c.x&&+c.y)
       if (mid.length >= 1) {
         path = [_ll(sy,sx), ...mid.map(c=>_ll(+c.y,+c.x)), _ll(ey,ex)]
       } else {
