@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>뛰지마!!</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+  <noscript><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" /></noscript>
+  <link rel="stylesheet" href="src/style.css?v=20260421v2" />
+  <!-- Leaflet: 온보딩 지도 (API 키 불필요) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" crossorigin=""/>
+</head>
+<body>
+
+  <!-- ══ STEP 1 — 출발지 ════════════════════════════════════════════════ -->
+  <div id="ob-1" class="ob-screen ob-map-screen active">
+
+    <div id="ob-map-1" class="ob-map-bg"></div>
+
+    <div class="ob-pin-wrap" id="ob-pin-1">
+      <div class="ob-pin ob-pin--start"></div>
+      <div class="ob-pin-stem"></div>
+      <div class="ob-pin-shadow"></div>
+    </div>
+
+    <div class="ob-topbar ob-topbar--map">
+      <span class="ob-brand">뛰지마!!</span>
+      <div class="ob-steps">
+        <span class="ob-step ob-step--active">1</span>
+        <span class="ob-step-line"></span>
+        <span class="ob-step">2</span>
+        <span class="ob-step-line"></span>
+        <span class="ob-step">3</span>
+      </div>
+    </div>
+
+    <div class="ob-map-card">
+      <div class="ob-map-card-grip"></div>
+      <div class="ob-map-card-head">
+        <div class="ob-map-card-left">
+          <span class="ob-step-tag ob-step-tag--green">출발지</span>
+          <h2 class="ob-map-title">어디서 출발하나요?</h2>
+        </div>
+        <div class="ob-map-card-btns">
+          <button class="ob-icon-btn ob-map-search-btn--gps" onclick="useMyLocation(1)" title="내 위치 사용">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+              <circle cx="12" cy="12" r="8" stroke-opacity=".25"/>
+            </svg>
+          </button>
+          <button class="ob-icon-btn" onclick="openModal('start')" title="장소 검색">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="ob-addr-box" id="ob-addr-1">
+        <svg class="ob-addr-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.4 7 12 8 12s8-6.6 8-12a8 8 0 0 0-8-8z"/>
+        </svg>
+        <span class="ob-addr-hint" id="ob-addr-1-text">지도를 드래그해 위치를 선택하세요</span>
+      </div>
+
+      <input type="hidden" id="start-input" />
+      <button class="ob-cta" id="ob-1-next" disabled onclick="goStep(2)">
+        다음으로
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ══ STEP 2 — 도착지 ════════════════════════════════════════════════ -->
+  <div id="ob-2" class="ob-screen ob-map-screen">
+
+    <div id="ob-map-2" class="ob-map-bg"></div>
+
+    <div class="ob-pin-wrap" id="ob-pin-2">
+      <div class="ob-pin ob-pin--end"></div>
+      <div class="ob-pin-stem"></div>
+      <div class="ob-pin-shadow"></div>
+    </div>
+
+    <div class="ob-topbar ob-topbar--map">
+      <button class="ob-back-btn ob-back-btn--map" onclick="goStep(1)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 5l-7 7 7 7"/>
+        </svg>
+      </button>
+      <div class="ob-steps">
+        <span class="ob-step ob-step--done">1</span>
+        <span class="ob-step-line ob-step-line--done"></span>
+        <span class="ob-step ob-step--active">2</span>
+        <span class="ob-step-line"></span>
+        <span class="ob-step">3</span>
+      </div>
+    </div>
+
+    <div class="ob-map-card">
+      <div class="ob-map-card-grip"></div>
+      <div class="ob-map-card-head">
+        <div class="ob-map-card-left">
+          <span class="ob-step-tag ob-step-tag--red">도착지</span>
+          <h2 class="ob-map-title">어디로 가나요?</h2>
+        </div>
+        <div class="ob-map-card-btns">
+          <button class="ob-icon-btn ob-map-search-btn--gps" onclick="useMyLocation(2)" title="내 위치 사용">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+              <circle cx="12" cy="12" r="8" stroke-opacity=".25"/>
+            </svg>
+          </button>
+          <button class="ob-icon-btn ob-icon-btn--blue" onclick="openModal('end')" title="장소 검색">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="ob-addr-box" id="ob-addr-2">
+        <svg class="ob-addr-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="10" r="3"/><path d="M12 2a8 8 0 0 0-8 8c0 5.4 7 12 8 12s8-6.6 8-12a8 8 0 0 0-8-8z"/>
+        </svg>
+        <span class="ob-addr-hint" id="ob-addr-2-text">지도를 드래그해 위치를 선택하세요</span>
+      </div>
+
+      <input type="hidden" id="end-input" />
+      <button class="ob-cta ob-cta--blue" id="ob-2-next" disabled onclick="goStep(3)">
+        다음으로
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ══ STEP 3 — 시각 설정 ══════════════════════════════════════════════ -->
+  <div id="ob-3" class="ob-screen ob-time-screen">
+
+    <div class="ob-topbar ob-topbar--dark">
+      <button class="ob-back-btn" onclick="goStep(2)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 12H5M12 5l-7 7 7 7"/>
+        </svg>
+      </button>
+      <div class="ob-steps">
+        <span class="ob-step ob-step--done">1</span>
+        <span class="ob-step-line ob-step-line--done"></span>
+        <span class="ob-step ob-step--done">2</span>
+        <span class="ob-step-line ob-step-line--done"></span>
+        <span class="ob-step ob-step--active">3</span>
+      </div>
+    </div>
+
+    <div class="ob-route-ctx">
+      <span class="ob-rctx-dot ob-rctx-dot--s"></span>
+      <span class="ob-rctx-nm" id="ob-rctx-from">출발지</span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.35;flex-shrink:0"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      <span class="ob-rctx-nm" id="ob-rctx-to">도착지</span>
+      <span class="ob-rctx-dot ob-rctx-dot--e"></span>
+    </div>
+
+    <div class="ob-time-header">
+      <h1 class="ob-time-title">시간을 알려주세요</h1>
+      <p class="ob-time-desc">출발 시각과 마감 시각을 설정하세요</p>
+    </div>
+
+    <div class="ob-foot">
+
+      <div class="tpick">
+        <div class="tpick-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          출발 시각
+        </div>
+        <div class="tpick-row">
+          <select id="now-ampm" class="tpick-sel tpick-sel--ampm" onchange="onTimeChange('now')">
+            <option value="am">오전</option>
+            <option value="pm">오후</option>
+          </select>
+          <select id="now-h" class="tpick-sel tpick-sel--h" onchange="onTimeChange('now')">
+            <option>1</option><option>2</option><option>3</option><option>4</option>
+            <option>5</option><option>6</option><option>7</option><option>8</option>
+            <option>9</option><option>10</option><option>11</option><option>12</option>
+          </select>
+          <span class="tpick-colon">:</span>
+          <select id="now-m" class="tpick-sel tpick-sel--m" onchange="onTimeChange('now')">
+            <option value="00">00</option><option value="05">05</option>
+            <option value="10">10</option><option value="15">15</option>
+            <option value="20">20</option><option value="25">25</option>
+            <option value="30">30</option><option value="35">35</option>
+            <option value="40">40</option><option value="45">45</option>
+            <option value="50">50</option><option value="55">55</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tpick tpick--goal">
+        <div class="tpick-label">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          마감 시각
+        </div>
+        <div class="tpick-row">
+          <select id="goal-ampm" class="tpick-sel tpick-sel--ampm" onchange="onTimeChange('goal')">
+            <option value="am">오전</option>
+            <option value="pm">오후</option>
+          </select>
+          <select id="goal-h" class="tpick-sel tpick-sel--h" onchange="onTimeChange('goal')">
+            <option>1</option><option>2</option><option>3</option><option>4</option>
+            <option>5</option><option>6</option><option>7</option><option>8</option>
+            <option>9</option><option>10</option><option>11</option><option>12</option>
+          </select>
+          <span class="tpick-colon">:</span>
+          <select id="goal-m" class="tpick-sel tpick-sel--m" onchange="onTimeChange('goal')">
+            <option value="00">00</option><option value="05">05</option>
+            <option value="10">10</option><option value="15">15</option>
+            <option value="20">20</option><option value="25">25</option>
+            <option value="30">30</option><option value="35">35</option>
+            <option value="40">40</option><option value="45">45</option>
+            <option value="50">50</option><option value="55">55</option>
+          </select>
+        </div>
+      </div>
+
+      <input type="hidden" id="now-time" />
+      <input type="hidden" id="goal-time" />
+
+      <button class="ob-cta ob-cta--accent" id="ob-3-next" disabled onclick="startAnalysis()">
+        분석 시작
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+
+  </div>
+
+  <!-- ══ 결과 화면 ════════════════════════════════════════════════════════ -->
+  <div id="screen-main" class="ob-screen result-screen">
+
+    <div class="res-header">
+      <button class="ob-back-btn" onclick="goStep(1)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      </button>
+      <span class="res-brand">뛰지마!!</span>
+      <div style="width:38px"></div>
+    </div>
+
+    <div id="sm-loading" class="sm-loading hidden">
+      <div class="sm-loading-glow"></div>
+      <video class="sm-loading-vid" src="assets/walk.mp4" autoplay loop muted playsinline></video>
+      <p id="sm-loading-txt" class="sm-loading-txt">경로를 분석하는 중...</p>
+      <div class="sm-loading-dots"><span></span><span></span><span></span></div>
+    </div>
+
+    <div id="verdict-wrap" class="verdict-wrap hidden"></div>
+    <div id="result" class="result hidden"></div>
+    <div id="map-wrap" class="map-wrap hidden">
+      <div id="kakao-map" style="width:100%;height:220px;"></div>
+    </div>
+
+  </div>
+
+  <!-- ══ 지도 전체 화면 ══════════════════════════════════════════════════ -->
+  <div id="screen-map" class="ob-screen">
+
+    <div id="map-full"></div>
+
+    <!-- 우측 상단 경로 세그먼트 패널 -->
+    <div id="mf-seg-panel" class="mf-seg-panel hidden"></div>
+
+    <button class="mf-preview-btn" onclick="closeMapScreen()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      결과로
+    </button>
+
+    <div class="mf-info-card">
+      <div class="mf-info-row">
+        <span class="mf-info-label">마감</span>
+        <span class="mf-info-time" id="mf-goal-time">--</span>
+        <span class="mf-verdict-badge" id="mf-verdict-badge">여유</span>
+      </div>
+      <div class="mf-info-remain-row">
+        <span class="mf-info-remain" id="mf-remain">--</span>
+        <span style="font-size:0.72rem;color:#999;margin-left:4px">남음</span>
+      </div>
+      <div class="mf-divider"></div>
+      <div class="mf-next">
+        <span class="mf-next-icon" id="mf-next-icon">🚇</span>
+        <div class="mf-next-body">
+          <div class="mf-next-title" id="mf-next-title">다음 일정</div>
+          <div class="mf-next-sub" id="mf-next-sub">--</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mf-sheet" id="mf-sheet">
+      <div class="mf-sheet-grip" onclick="toggleSheet()" ontouchend="event.preventDefault();toggleSheet()">
+        <div class="mf-grip-bar"></div>
+      </div>
+      <div class="mf-sheet-content">
+
+        <div id="mf-route-tabs-wrap" style="display:none">
+          <span class="mf-section-label">경로 선택</span>
+          <div class="mf-pills" id="mf-route-tabs"></div>
+        </div>
+
+        <span class="mf-section-label">경로</span>
+        <div class="mf-route-wrap">
+          <div class="mf-route-row">
+            <span class="mf-dot" style="background:#22c55e"></span>
+            <span class="mf-route-name" id="mf-start-name">--</span>
+          </div>
+          <div class="mf-route-sep"></div>
+          <div class="mf-route-row">
+            <span class="mf-dot" style="background:#ef4444"></span>
+            <span class="mf-route-name" id="mf-end-name">--</span>
+          </div>
+        </div>
+
+        <span class="mf-section-label">지도 테마</span>
+        <div class="mf-pills" id="mf-themes">
+          <button class="mf-pill active" onclick="setMapTheme(this,'default')">기본</button>
+          <button class="mf-pill" onclick="setMapTheme(this,'slope')">경사도</button>
+          <button class="mf-pill" onclick="setMapTheme(this,'crowd')">교통</button>
+        </div>
+        <div id="mf-slope-legend" class="mf-slope-legend" style="display:none">
+          <span style="color:#ef4444">● 급경사</span>
+          <span style="color:#f97316">● 완경사</span>
+          <span style="color:#eab308">● 평지</span>
+          <span style="color:#3b82f6">● 내리막</span>
+        </div>
+
+        <span class="mf-section-label">경로 옵션</span>
+        <div class="mf-pills" id="mf-presets">
+          <button class="mf-pill active" onclick="setPreset(this,'time')">시간 최소</button>
+          <button class="mf-pill" onclick="setPreset(this,'transfer')">환승 최소</button>
+        </div>
+
+        <button class="mf-collapse-btn" id="mf-collapse-btn" onclick="toggleSheet()" ontouchend="event.preventDefault();toggleSheet()">접기</button>
+
+        <div class="mf-menu-row">
+          <button class="mf-menu-btn" onclick="closeMapScreen()">결과 보기</button>
+          <button class="mf-menu-btn mf-menu-btn--primary" onclick="goStep(1)">처음으로</button>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ 장소 검색 모달 ════════════════════════════════════════════════ -->
+  <div id="backdrop" class="backdrop hidden" onclick="closeModal()"></div>
+  <div id="modal" class="modal hidden">
+    <div class="modal-handle"></div>
+    <div class="modal-head">
+      <span id="modal-title" class="modal-ttl">장소 검색</span>
+      <button class="modal-x" onclick="closeModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-search">
+      <div class="modal-search-inner">
+        <svg class="modal-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="modal-input" class="modal-input" placeholder="장소명이나 주소 입력" />
+      </div>
+      <button class="modal-btn" onclick="searchPlace()">검색</button>
+    </div>
+    <div id="modal-list" class="modal-list"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js" crossorigin=""></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="src/config.js?v=20260421v2"></script>
+  <script src="src/api.js?v=20260421v2"></script>
+  <script src="src/engine/tables.js?v=20260421v2"></script>
+  <script src="src/engine.js?v=20260421v2"></script>
+  <script src="src/session.js?v=20260421v2"></script>
+  <script src="src/onboarding-map.js?v=20260421v2"></script>
+  <script src="src/modal-search.js?v=20260421v2"></script>
+  <script src="src/verdict-render.js?v=20260421v2"></script>
+  <script src="src/map-screen.js?v=20260421v2"></script>
+  <script src="src/app.js?v=20260421v2"></script>
+</body>
+</html>
