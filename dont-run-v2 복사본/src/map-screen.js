@@ -521,11 +521,13 @@ function openIndoorView() {
     return
   }
 
-  // MVP: 실제 indoor UI 연결 전, 스텁 오버레이로 대상 역만 먼저 보여준다.
-  _showIndoorStub(norm || rawName)
+  _showIndoorOverlay(norm || rawName)
 }
 
-function _showIndoorStub(stationName) {
+// Indoor UI 는 indoor/mobile/scripts/bundle-data.mjs 로 `./indoor/` 에 복사된다.
+// 그 웹 복사본은 강제 simMode=true 로 빌드돼 있어 Wi-Fi 권한 없이도 동작.
+// 여기서는 iframe 으로 띄우고 ?station= 파라미터로 대상 역을 넘긴다.
+function _showIndoorOverlay(stationName) {
   let ov = document.getElementById('indoor-overlay')
   if (!ov) {
     ov = document.createElement('div')
@@ -537,22 +539,19 @@ function _showIndoorStub(stationName) {
       'font-family:inherit',
     ].join(';')
     ov.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#111;border-bottom:1px solid #333">
-        <button id="indoor-overlay-close" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:4px 8px">←</button>
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#111;border-bottom:1px solid #333;flex:0 0 auto">
+        <button id="indoor-overlay-close" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:4px 8px" aria-label="닫기">←</button>
         <span id="indoor-overlay-title" style="font-size:17px;font-weight:600">지하철 내부 보기</span>
       </div>
-      <div id="indoor-overlay-body" style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;line-height:1.6">
-        <div></div>
-      </div>`
+      <iframe id="indoor-overlay-frame"
+              style="flex:1;width:100%;border:none;background:#fff"
+              allow="geolocation"></iframe>`
     document.body.appendChild(ov)
     ov.querySelector('#indoor-overlay-close').addEventListener('click', () => ov.remove())
   }
   ov.querySelector('#indoor-overlay-title').textContent = `${stationName}역 내부`
-  ov.querySelector('#indoor-overlay-body > div').innerHTML = `
-    <div style="font-size:48px;margin-bottom:16px">🚇</div>
-    <div style="font-size:17px;font-weight:600;margin-bottom:8px">${stationName}역 실내 지도 준비 중</div>
-    <div style="font-size:14px;color:#aaa;max-width:280px">
-      WiFi 측위 기반 실내 경로 안내가 곧 연결됩니다.<br>
-      (indoor/mobile 빌드 → 이 화면 대체 예정)
-    </div>`
+  const frame = ov.querySelector('#indoor-overlay-frame')
+  const src = `./indoor/user.html?station=${encodeURIComponent(stationName)}`
+  // Only reset src when it actually changes — avoids reload flicker on re-open.
+  if (frame.getAttribute('src') !== src) frame.src = src
 }

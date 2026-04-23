@@ -800,7 +800,24 @@ window.addEventListener('resize', () => { fitImage(); draw(); });
     sel.appendChild(o);
   }
   if (!files.length) { alert('역 데이터가 없어요 (merged/ 비어있음)'); return; }
-  await loadStation(files[0]);
+
+  // Allow callers (e.g. embedding web app) to preselect a station via
+  // ?station=<name>. Matches by substring against the display label so
+  // both "강남" and "222_강남역.json" work.
+  let initial = files[0];
+  try {
+    const wanted = new URLSearchParams(location.search).get('station');
+    if (wanted) {
+      const norm = wanted.replace(/역$/, '');
+      const hit = files.find(f => {
+        const label = f.replace(/\.json$/, '').replace(/^\d+_?/, '');
+        return label === wanted || label === norm || label.includes(norm);
+      });
+      if (hit) initial = hit;
+    }
+  } catch {}
+  sel.value = initial;
+  await loadStation(initial);
 })();
 </script>
 </body>

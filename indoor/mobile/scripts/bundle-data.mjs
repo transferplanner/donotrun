@@ -23,6 +23,9 @@ const ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 const OUT_DIR = path.resolve(ROOT, 'mobile/www/data');
 const OUTPUT = path.resolve(ROOT, 'data/output');
 const RAW_MAPS = path.resolve(ROOT, 'data/raw_maps');
+// Web deploy target: dont-run-v2 app embeds indoor UI in an iframe.
+// ROOT is .../indoor, so the v2 app sits at ../dont-run-v2 복사본.
+const WEB_DST = path.resolve(ROOT, '..', 'dont-run-v2 복사본', 'indoor');
 
 async function rmrf(p) {
   await fs.rm(p, { recursive: true, force: true });
@@ -225,6 +228,44 @@ async function main() {
   };
   await writeJson(path.join(OUT_DIR, 'manifest.json'), summary);
   console.log('[bundle-data]', summary);
+
+  // ── Web bundle for dont-run-v2 embed ───────────────────────────────
+  // Copy the whole www/ tree to dont-run-v2's /indoor/ and force sim
+  // mode (the web build has no Capacitor Wifi plugin). The resulting
+  // page is loaded in an iframe from map-screen.js openIndoorView().
+  try {
+    await rmrf(WEB_DST);
+    await ensure(WEB_DST);
+    await copyDir(path.resolve(ROOT, 'mobile/www'), WEB_DST);
+    await forceSimModeInWebCopy(path.join(WEB_DST, 'user.html'));
+    console.log('[bundle-data] web copy →', path.relative(ROOT, WEB_DST));
+  } catch (e) {
+    console.warn('[bundle-data] web copy failed:', e.message);
+  }
+}
+
+async function copyDir(src, dst) {
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  await ensure(dst);
+  for (const e of entries) {
+    const s = path.join(src, e.name);
+    const d = path.join(dst, e.name);
+    if (e.isDirectory()) await copyDir(s, d);
+    else await fs.copyFile(s, d);
+  }
+}
+
+async function forceSimModeInWebCopy(htmlPath) {
+  let html = await fs.readFile(htmlPath, 'utf8');
+  // The bundle's inline bridge reads localStorage.dri.simMode; override
+  // it so the web iframe always runs in sim mode and disables native
+  // Wi-Fi scanning (which doesn't exist on the web).
+  const simLine = `window.__DRI_SIM_MODE = (function(){ try { return localStorage.getItem('dri.simMode')==='1'; } catch(e){ return false; } })();`;
+  if (!html.includes(simLine)) {
+    throw new Error('simMode init line not found in bundled user.html — inlineHook template drift?');
+  }
+  html = html.replace(simLine, 'window.__DRI_SIM_MODE = true;');
+  await fs.writeFile(htmlPath, html, 'utf8');
 }
 
 main().catch((err) => {
