@@ -1,0 +1,19 @@
+{
+  "name": "dont-run-v2-functions",
+  "description": "Firebase Functions proxy for dont-run-v2 (keeps API keys off the client)",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions,hosting",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "devDependencies": {}
+}
