@@ -2,21 +2,23 @@
 __pycache__/
 *.pyc
 .env
+indoor/.env
 node_modules/
 .DS_Store
 
 # data: kept out of public repo (secrets-adjacent) — regenerate via pipeline
+indoor/data/
 data/
 
 # Android build artifacts
-mobile/android/.gradle/
-mobile/android/build/
-mobile/android/app/build/
-mobile/android/local.properties
-mobile/android/capacitor-cordova-android-plugins/
-mobile/android/app/src/main/assets/public/
-mobile/android/app/src/main/assets/capacitor.config.json
-mobile/android/app/src/main/assets/capacitor.plugins.json
+indoor/mobile/android/.gradle/
+indoor/mobile/android/build/
+indoor/mobile/android/app/build/
+indoor/mobile/android/local.properties
+indoor/mobile/android/capacitor-cordova-android-plugins/
+indoor/mobile/android/app/src/main/assets/public/
+indoor/mobile/android/app/src/main/assets/capacitor.config.json
+indoor/mobile/android/app/src/main/assets/capacitor.plugins.json
 
 *.iml
 .idea/
