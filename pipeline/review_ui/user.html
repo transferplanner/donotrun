@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0b" />
+<title>뛰지마!! · 실내</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #1c1c1e;
+    --surface-2: #2c2c2e;
+    --border: #3a3a3c;
+    --text: #f4f4f5;
+    --muted: #8e8e93;
+    --accent: #4aa3ff;
+    --ok: #00d66b;
+    --warn: #ffd400;
+    --danger: #ff3040;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  button { font: inherit; color: inherit; }
+
+  /* Top bar */
+  #top {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    padding: calc(var(--safe-top) + 8px) 12px 8px;
+    background: linear-gradient(180deg, rgba(10,10,11,0.95), rgba(10,10,11,0));
+    display: flex; align-items: center; gap: 8px;
+  }
+  #station {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 12px; border-radius: 10px; font-weight: 600;
+  }
+
+  /* Map */
+  #map { position: fixed; inset: 0; background: #000; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* Floor pills (right side) */
+  #floors {
+    position: fixed; right: 12px; top: 50%; transform: translateY(-50%); z-index: 15;
+    display: flex; flex-direction: column; gap: 6px;
+    background: rgba(28,28,30,0.9); padding: 6px; border-radius: 14px;
+    backdrop-filter: blur(10px); border: 1px solid var(--border);
+  }
+  #floors button {
+    width: 44px; height: 40px; border-radius: 10px;
+    background: transparent; border: none; color: var(--muted); font-weight: 600;
+  }
+  #floors button.active { background: var(--accent); color: #000; }
+
+  /* Bottom sheet */
+  #sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 18;
+    padding: 14px 16px calc(var(--safe-bottom) + 14px);
+    background: var(--surface); border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+    max-height: 60vh; overflow-y: auto;
+    transition: transform 0.3s cubic-bezier(0.2,0.9,0.3,1);
+  }
+  #sheet .grabber {
+    width: 40px; height: 4px; background: var(--border); border-radius: 2px;
+    margin: 0 auto 12px;
+  }
+  .picker-row {
+    display: flex; gap: 8px; margin-bottom: 10px;
+  }
+  .picker-slot {
+    flex: 1; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 12px; min-height: 56px;
+    display: flex; flex-direction: column; justify-content: center; cursor: pointer;
+  }
+  .picker-slot .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .picker-slot .val { font-size: 15px; font-weight: 600; margin-top: 2px; }
+  .picker-slot .val.empty { color: var(--muted); font-weight: 400; }
+  .picker-slot.from { border-left: 3px solid var(--ok); }
+  .picker-slot.to { border-left: 3px solid var(--danger); }
+
+  #go {
+    width: 100%; background: var(--accent); color: #000;
+    border: none; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 700;
+    margin-top: 4px;
+  }
+  #go:disabled { background: var(--surface-2); color: var(--muted); }
+
+  /* TBT list */
+  #tbt { margin-top: 14px; display: none; }
+  #tbt.show { display: block; }
+  #tbt .summary {
+    background: var(--accent); color: #000; padding: 10px 14px; border-radius: 10px;
+    font-weight: 700; margin-bottom: 10px;
+  }
+  #tbt ol { margin: 0; padding-left: 22px; line-height: 1.8; }
+  #tbt .floor { color: var(--accent); font-weight: 600; }
+
+  /* Picker modal */
+  #modal {
+    position: fixed; inset: 0; z-index: 30;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  #modal.show { display: flex; }
+  #modal .box {
+    width: 100%; max-width: 500px; max-height: 80vh;
+    background: var(--surface); border-radius: 20px 20px 0 0;
+    padding: 16px calc(var(--safe-bottom) + 16px);
+    overflow-y: auto;
+  }
+  #modal h3 { margin: 0 0 12px; font-size: 18px; }
+  #modal .cat { margin-bottom: 16px; }
+  #modal .cat-head { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  #modal .chip {
+    display: inline-block; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; margin: 0 6px 6px 0;
+    font-size: 14px; cursor: pointer; min-height: 44px;
+  }
+  #modal .chip.nearest {
+    background: linear-gradient(135deg, var(--warn), #ff9500); color: #000; border: none; font-weight: 700;
+  }
+  #modal .close {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px; margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="top">
+  <select id="station"></select>
+  <button id="detect" title="자동 감지" style="background:var(--surface);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:10px;font-weight:600;min-width:44px;">📍</button>
+</div>
+
+<div id="detect-banner" style="display:none;position:fixed;left:12px;right:12px;top:calc(var(--safe-top) + 56px);z-index:25;background:rgba(74,163,255,0.95);color:#000;padding:10px 14px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,0.5);"></div>
+
+<div id="map"><canvas id="canvas"></canvas></div>
+
+<div id="floors"></div>
+
+<div id="sheet">
+  <div class="grabber"></div>
+  <div class="picker-row">
+    <div class="picker-slot from" id="slot-from">
+      <div class="lbl">내 위치</div>
+      <div class="val empty" id="val-from">어디세요?</div>
+    </div>
+    <div class="picker-slot to" id="slot-to">
+      <div class="lbl">목적지</div>
+      <div class="val empty" id="val-to">어디로?</div>
+    </div>
+  </div>
+  <button id="go" disabled>길찾기</button>
+  <div id="tbt">
+    <div class="summary" id="tbt-summary"></div>
+    <ol id="tbt-list"></ol>
+  </div>
+</div>
+
+<div id="modal"><div class="box">
+  <h3 id="modal-title">선택</h3>
+  <div id="modal-body"></div>
+  <button class="close" id="modal-close">닫기</button>
+</div></div>
+
+<script type="module">
+  import { shortestPath } from '/static/location/pathfinding.js';
+  import { WifiPositioning } from '/static/location/wifiPositioning.js';
+  import { buildFloorTransforms } from '/static/location/georef.js';
+  window.shortestPath = shortestPath;
+  window.WifiPositioning = WifiPositioning;
+  window.buildFloorTransforms = buildFloorTransforms;
+</script>
+<script>
+const TYPE_COLORS = {
+  gate: '#ffd400', exit: '#00d66b',
+  stair: '#4aa3ff', escalator: '#4aa3ff', elevator: '#a46bff',
+  corridor: '#ff8c4a', junction: '#ff8c4a',
+  platform_edge: '#ff3040', transfer_point: '#00d6c6',
+  fare_machine: '#bbbbbb', toilet: '#ff4aa3', info: '#ffffff',
+};
+const TYPE_KO = {
+  gate: '개찰구', exit: '출구', stair: '계단', escalator: '에스컬레이터',
+  elevator: '엘리베이터', platform_edge: '승강장', transfer_point: '환승통로',
+  fare_machine: '발권기', toilet: '화장실', info: '안내소',
+  corridor: '통로', junction: '분기점',
+};
+const VERT_KO = { stair: '계단', escalator: '에스컬레이터', elevator: '엘리베이터' };
+const KEY_TYPES = new Set(['stair','escalator','elevator','exit','gate','platform_edge','transfer_point']);
+
+// Landmark categories for the picker (most recognizable → least)
+const ANCHOR_CATS = [
+  { key: 'exit',           title: '출구', types: ['exit'] },
+  { key: 'platform_edge',  title: '승강장', types: ['platform_edge'] },
+  { key: 'gate',           title: '개찰구', types: ['gate'] },
+  { key: 'transfer_point', title: '환승통로', types: ['transfer_point'] },
+  { key: 'vertical',       title: '계단 · 에스컬 · 엘리베이터', types: ['stair','escalator','elevator'] },
+];
+
+const $ = id => document.getElementById(id);
+const state = {
+  stationFile: null,
+  data: null,
+  graph: null,
+  img: null, imgW: 0, imgH: 0,
+  scale: 1, offsetX: 0, offsetY: 0,
+  panX: 0, panY: 0, zoom: 1,
+  floorIdx: 0,
+  from: null, // {floor, nodeId, label}
+  to: null,
+  routePath: null,
+  pickerTarget: null, // 'from' | 'to'
+  fingerprint: null, // normalized cells for current station
+  wp: null,          // WifiPositioning instance
+  detected: null,    // { lat, lng, floor, confidence, cellIndex, floorIdx }
+  floorTransforms: null, // Map<graphFloorIdx, {project, confidence, ...}>
+  floorMapOverride: null, // optional {rawCode: graphLabel}
+};
+
+// ---------- data ----------
+async function listStations() {
+  const r = await fetch('/api/stations');
+  const j = await r.json();
+  return j.files || [];
+}
+async function loadStation(file) {
+  state.stationFile = file;
+  state.from = state.to = state.routePath = state.detected = null;
+  state.fingerprint = state.wp = null;
+  updateSlots();
+  hideDetectBanner();
+  const [sRes, gRes] = await Promise.all([
+    fetch('/api/station?f=' + encodeURIComponent(file)),
+    fetch('/api/graph?f=' + encodeURIComponent(file)),
+  ]);
+  state.data = await sRes.json();
+  state.graph = gRes.ok ? await gRes.json() : state.data;
+  buildFloorPills();
+  selectFloor(defaultFloorIdx());
+  await loadImage();
+  await loadFingerprint(file);
+  draw();
+  // Mobile: layout can still be settling. Re-fit after next frame.
+  requestAnimationFrame(() => { fitImage(); draw(); });
+  setTimeout(() => { fitImage(); draw(); }, 200);
+}
+
+// Try matching fingerprint JSON by station name (strip "222_" prefix if present)
+async function loadFingerprint(file) {
+  const base = file.replace(/\.json$/, '').replace(/^\d+_/, '');
+  try {
+    const r = await fetch('/api/fingerprint?f=' + encodeURIComponent(base + '.json'));
+    if (!r.ok) { document.getElementById('detect').style.opacity = '0.4'; return; }
+    const fp = await r.json();
+    state.fingerprint = fp;
+    state.wp = new WifiPositioning(fp.cells || []);
+    // Pull per-station axis hints (flipLng/flipLat) from _floor_map.json
+    let axes = {};
+    let floorMapOverride;
+    try {
+      const fmr = await fetch('/api/floor-map');
+      if (fmr.ok) {
+        const fm = await fmr.json();
+        const entry = fm[fp.station_id] || {};
+        axes = entry._axes || {};
+        // Pass the non-meta keys as override mapping
+        floorMapOverride = Object.fromEntries(
+          Object.entries(entry).filter(([k, v]) => !k.startsWith('_'))
+        );
+      }
+    } catch {}
+    state.floorTransforms = buildFloorTransforms(fp, state.graph, floorMapOverride, axes);
+    document.getElementById('detect').style.opacity = '1';
+  } catch {
+    document.getElementById('detect').style.opacity = '0.4';
+  }
+}
+function loadImage() {
+  return new Promise(resolve => {
+    const src = state.data._source_image;
+    if (!src) { state.img = null; resolve(); return; }
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.imgW = img.naturalWidth;
+      state.imgH = img.naturalHeight;
+      fitImage();
+      resolve();
+    };
+    img.onerror = () => { state.img = null; resolve(); };
+    // Image.src bypasses window.fetch, so manually resolve via the
+    // global image manifest the native bridge installs. Falls back to
+    // the dev-server path when the manifest isn't present.
+    const hash = (window.__DRI_IMAGE_MANIFEST && window.__DRI_IMAGE_MANIFEST[src]);
+    img.src = hash ? ('./data/image/' + hash) : ('/api/image?f=' + encodeURIComponent(src));
+  });
+}
+
+// Start on the floor most likely to be the concourse (B1 prioritized, else first)
+function defaultFloorIdx() {
+  const floors = state.data.floors || [];
+  const idx = floors.findIndex(f => f.floor === 'B1' || f.role === 'concourse');
+  return idx >= 0 ? idx : 0;
+}
+
+// ---------- rendering ----------
+function fitImage() {
+  const c = $('canvas');
+  const cw = c.clientWidth || window.innerWidth;
+  const ch = c.clientHeight || window.innerHeight;
+  // Cap DPR so the backing store doesn't exceed WebView tile memory limits.
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  c.width = Math.floor(cw * dpr);
+  c.height = Math.floor(ch * dpr);
+  state.dpr = dpr;
+  if (!state.imgW) return;
+  const s = Math.min(c.width / state.imgW, c.height / state.imgH) * 0.95;
+  state.scale = s;
+  state.offsetX = (c.width - state.imgW * s) / 2;
+  state.offsetY = (c.height - state.imgH * s) / 2;
+}
+function rel2canvas(rx, ry) {
+  return [state.offsetX + rx / 1000 * state.imgW * state.scale,
+          state.offsetY + ry / 1000 * state.imgH * state.scale];
+}
+function draw() {
+  const c = $('canvas');
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  if (state.img) {
+    ctx.drawImage(state.img, state.offsetX, state.offsetY,
+      state.imgW * state.scale, state.imgH * state.scale);
+  }
+  if (!state.data) return;
+  const floor = state.data.floors[state.floorIdx];
+
+  // Route on this floor
+  if (state.routePath) {
+    const pts = state.routePath.nodes
+      .filter(n => n._floor === state.floorIdx)
+      .map(n => rel2canvas(n.x, n.y));
+    if (pts.length >= 2) {
+      // Glow
+      ctx.strokeStyle = 'rgba(255,212,0,0.3)';
+      ctx.lineWidth = 18 * devicePixelRatio;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
+      // Solid
+      ctx.strokeStyle = '#ffd400';
+      ctx.lineWidth = 6 * devicePixelRatio;
+      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
+    }
+  }
+
+  // Only show key landmarks in user view, or route nodes
+  const routeIds = state.routePath
+    ? new Set(state.routePath.nodes.filter(n => n._floor === state.floorIdx).map(n => n.id))
+    : null;
+
+  for (const n of floor.nodes) {
+    const isKey = KEY_TYPES.has(n.type);
+    const isRoute = routeIds?.has(n.id);
+    const isAnchor = (state.from?.floor === state.floorIdx && state.from?.nodeId === n.id) ||
+                     (state.to?.floor === state.floorIdx && state.to?.nodeId === n.id);
+    if (!isKey && !isRoute && !isAnchor) continue;
+
+    const [x, y] = rel2canvas(n.x, n.y);
+    const r = (isAnchor ? 10 : 6) * devicePixelRatio;
+    ctx.fillStyle = TYPE_COLORS[n.type] || '#4aa3ff';
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5 * devicePixelRatio;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    if (isAnchor) {
+      ctx.strokeStyle = state.from?.nodeId === n.id ? '#00d66b' : '#ff3040';
+      ctx.lineWidth = 3 * devicePixelRatio;
+      ctx.beginPath(); ctx.arc(x, y, r + 4 * devicePixelRatio, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // Label only for key types, anchors, and route endpoints
+    if (isKey || isAnchor) {
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${12 * devicePixelRatio}px -apple-system, system-ui`;
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.lineWidth = 3 * devicePixelRatio;
+      const label = n.label || TYPE_KO[n.type] || n.id;
+      ctx.strokeText(label, x + r + 4 * devicePixelRatio, y);
+      ctx.fillText(label, x + r + 4 * devicePixelRatio, y);
+    }
+  }
+
+  drawDetected(ctx);
+  drawDebugFingerprints(ctx);
+}
+
+// ?debug=1 → overlay ALL fingerprint cells on current floor as tiny dots.
+// Lets us eyeball georef accuracy: cells should land on walkable areas.
+function drawDebugFingerprints(ctx) {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('debug')) return;
+  if (!state.fingerprint || !state.floorTransforms) return;
+  const t = state.floorTransforms.get(state.floorIdx);
+  if (!t) return;
+  const floorLabel = state.data.floors[state.floorIdx].floor;
+  const cells = state.fingerprint.cells.filter(c => c.floor === floorLabel);
+  ctx.fillStyle = 'rgba(255,64,180,0.45)';
+  for (const c of cells) {
+    const [rx, ry] = t.project({ lat: c.lat, lng: c.lng });
+    const [x, y] = rel2canvas(rx, ry);
+    ctx.beginPath();
+    ctx.arc(x, y, 2 * devicePixelRatio, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Badge
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.fillRect(10 * devicePixelRatio, 10 * devicePixelRatio, 160 * devicePixelRatio, 22 * devicePixelRatio);
+  ctx.fillStyle = '#ff40b4';
+  ctx.font = `bold ${11 * devicePixelRatio}px -apple-system`;
+  ctx.textBaseline = 'top';
+  ctx.fillText(`debug: ${cells.length} fp cells on ${floorLabel}`,
+    14 * devicePixelRatio, 14 * devicePixelRatio);
+}
+
+// Animate the detected pulse without thrashing when idle
+setInterval(() => { if (state.detected) draw(); }, 80);
+
+// ---------- floor pills ----------
+function buildFloorPills() {
+  const el = $('floors');
+  el.innerHTML = '';
+  state.data.floors.forEach((f, i) => {
+    const b = document.createElement('button');
+    b.textContent = f.floor;
+    b.onclick = () => { selectFloor(i); draw(); };
+    el.appendChild(b);
+  });
+}
+function selectFloor(idx) {
+  state.floorIdx = idx;
+  [...$('floors').children].forEach((b, i) => b.classList.toggle('active', i === idx));
+}
+
+// ---------- anchor picker ----------
+function openPicker(which) {
+  state.pickerTarget = which;
+  $('modal-title').textContent = which === 'from' ? '내 위치' : '목적지';
+  const body = $('modal-body');
+  body.innerHTML = '';
+
+  // "Nearest exit" shortcut only makes sense for destination
+  if (which === 'to' && state.from) {
+    const cat = document.createElement('div');
+    cat.className = 'cat';
+    cat.innerHTML = '<div class="cat-head">빠른 선택</div>';
+    const chip = document.createElement('div');
+    chip.className = 'chip nearest';
+    chip.textContent = '가장 가까운 출구';
+    chip.onclick = () => { pickNearestExit(); closePicker(); };
+    cat.appendChild(chip);
+    body.appendChild(cat);
+  }
+
+  // Group anchors by category across all floors
+  for (const c of ANCHOR_CATS) {
+    const hits = [];
+    state.data.floors.forEach((f, fi) => {
+      for (const n of f.nodes) {
+        if (c.types.includes(n.type)) hits.push({ node: n, floor: fi, floorLabel: f.floor });
+      }
+    });
+    if (!hits.length) continue;
+    hits.sort((a, b) => {
+      // exits: numeric order by label "1","2","3"
+      if (c.key === 'exit') {
+        const an = parseInt(a.node.label), bn = parseInt(b.node.label);
+        if (!isNaN(an) && !isNaN(bn)) return an - bn;
+      }
+      return (a.node.label || '').localeCompare(b.node.label || '');
+    });
+    const cat = document.createElement('div');
+    cat.className = 'cat';
+    cat.innerHTML = `<div class="cat-head">${c.title}</div>`;
+    for (const h of hits) {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      const lbl = h.node.label || TYPE_KO[h.node.type] || h.node.id;
+      chip.textContent = `${lbl} · ${h.floorLabel}`;
+      chip.onclick = () => { pickAnchor(h.node, h.floor, h.floorLabel); closePicker(); };
+      cat.appendChild(chip);
+    }
+    body.appendChild(cat);
+  }
+  $('modal').classList.add('show');
+}
+function closePicker() { $('modal').classList.remove('show'); }
+
+function pickAnchor(node, floor, floorLabel) {
+  const picked = {
+    floor, nodeId: node.id,
+    label: (node.label || TYPE_KO[node.type] || node.id) + ' · ' + floorLabel,
+  };
+  if (state.pickerTarget === 'from') state.from = picked;
+  else state.to = picked;
+  state.routePath = null;
+  renderTBT(null);
+  updateSlots();
+  selectFloor(floor); draw();
+}
+
+function updateSlots() {
+  const fv = $('val-from'), tv = $('val-to');
+  if (state.from) { fv.textContent = state.from.label; fv.classList.remove('empty'); }
+  else { fv.textContent = '어디세요?'; fv.classList.add('empty'); }
+  if (state.to) { tv.textContent = state.to.label; tv.classList.remove('empty'); }
+  else { tv.textContent = '어디로?'; tv.classList.add('empty'); }
+  $('go').disabled = !(state.from && state.to);
+}
+
+// ---------- routing ----------
+function pickNearestExit() {
+  if (!window.shortestPath || !state.from) return;
+  const g = state.graph;
+  let best = null;
+  for (let fi = 0; fi < g.floors.length; fi++) {
+    for (const n of g.floors[fi].nodes) {
+      if (n.type !== 'exit') continue;
+      const r = window.shortestPath(g, state.from, { floor: fi, nodeId: n.id });
+      if (r && (!best || r.totalMeters < best.r.totalMeters)) {
+        best = { r, fi, n };
+      }
+    }
+  }
+  if (!best) return;
+  state.to = {
+    floor: best.fi, nodeId: best.n.id,
+    label: (best.n.label || '출구') + ' · ' + state.data.floors[best.fi].floor,
+  };
+  state.routePath = best.r;
+  updateSlots();
+  renderTBT(best.r);
+  draw();
+}
+
+function runRouting() {
+  if (!window.shortestPath || !state.from || !state.to) return;
+  const g = state.graph;
+  const r = window.shortestPath(g, state.from, state.to);
+  if (!r) { alert('경로를 찾을 수 없어요.\n다른 위치로 다시 시도해주세요.'); return; }
+  state.routePath = r;
+  renderTBT(r);
+  draw();
+}
+
+// ---------- turn-by-turn ----------
+function floorLabel(fi) { return state.data?.floors?.[fi]?.floor ?? `F${fi}`; }
+function nodeLabel(n) { return n.label || TYPE_KO[n.type] || n.id; }
+
+function buildSteps(path) {
+  const nodes = path.nodes;
+  if (!nodes.length) return [];
+  const out = [];
+  let walk = 0;
+  out.push(`<b>출발</b> · ${floorLabel(nodes[0]._floor)} · ${nodeLabel(nodes[0])}`);
+  for (let i = 1; i < nodes.length; i++) {
+    const p = nodes[i - 1], c = nodes[i];
+    const seg = Math.hypot(c.x - p.x, c.y - p.y) * 0.1;
+    if (c._floor !== p._floor) {
+      if (walk > 3) out.push(`직진 약 <b>${Math.round(walk)} m</b>`);
+      walk = 0;
+      const vert = [p, c].find(n => VERT_KO[n.type]);
+      const kindKo = vert ? VERT_KO[vert.type] : '수직이동';
+      const vLabel = vert?.label ? ` (${vert.label})` : '';
+      out.push(`${kindKo}${vLabel} 로 <span class="floor">${floorLabel(p._floor)} → ${floorLabel(c._floor)}</span>`);
+    } else {
+      walk += seg;
+      if (KEY_TYPES.has(c.type) && i !== nodes.length - 1 && walk > 5) {
+        out.push(`직진 약 <b>${Math.round(walk)} m</b> → ${TYPE_KO[c.type]} 지나서`);
+        walk = 0;
+      }
+    }
+  }
+  if (walk > 3) out.push(`직진 약 <b>${Math.round(walk)} m</b>`);
+  const last = nodes[nodes.length - 1];
+  out.push(`<b>도착</b> · ${floorLabel(last._floor)} · ${nodeLabel(last)}`);
+  return out;
+}
+
+function renderTBT(path) {
+  const tbt = $('tbt');
+  if (!path) { tbt.classList.remove('show'); return; }
+  const floors = [...new Set(path.nodes.map(n => floorLabel(n._floor)))].join(' → ');
+  $('tbt-summary').innerHTML = `${path.totalMeters.toFixed(0)} m · ${floors}`;
+  const list = $('tbt-list');
+  list.innerHTML = '';
+  for (const s of buildSteps(path)) {
+    const li = document.createElement('li');
+    li.innerHTML = s;
+    list.appendChild(li);
+  }
+  tbt.classList.add('show');
+}
+
+// ---------- wifi detection (simulated) ----------
+function showDetectBanner(html) {
+  const el = $('detect-banner');
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+function hideDetectBanner() {
+  $('detect-banner').style.display = 'none';
+}
+
+// Build a synthetic scan from a fingerprint cell with Gaussian-ish RSSI noise
+// and random dropouts, so the matcher doesn't just see an identical vector.
+function simulateScan(cell, { noise = 3, dropout = 0.2 } = {}) {
+  const scans = [];
+  for (const ap of cell.aps) {
+    if (Math.random() < dropout) continue;
+    const n = (Math.random() + Math.random() + Math.random() - 1.5) * 2 * noise;
+    scans.push({ bssid: ap.bssid, rssi: Math.round(ap.rssi + n) });
+  }
+  return scans;
+}
+
+// Map a fingerprint floor label onto a graph floor index.
+// Uses _floor_map when it has a concrete label; otherwise tries direct match.
+function fpFloorToGraphIdx(fpFloor) {
+  if (!fpFloor) return -1;
+  const floors = state.data?.floors || [];
+  // Direct label match (e.g. "B1")
+  let i = floors.findIndex(f => f.floor === fpFloor);
+  if (i >= 0) return i;
+  // Strip letters (e.g. "AB01" → "01" → 1 → but no canonical mapping; skip)
+  return -1;
+}
+
+// Snap a projected (rx, ry) in 0..1000 graph coords to the closest node on `floorIdx`.
+function snapToNearestNode(floorIdx, rx, ry) {
+  const floor = state.data?.floors?.[floorIdx];
+  if (!floor || !floor.nodes?.length) return null;
+  let best = null, bestD = Infinity;
+  for (const n of floor.nodes) {
+    const dx = n.x - rx, dy = n.y - ry;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) { bestD = d; best = n; }
+  }
+  return best ? { node: best, dist: Math.sqrt(bestD) } : null;
+}
+
+async function runDetection() {
+  if (!state.wp || !state.fingerprint) {
+    showDetectBanner('핑거프린트 데이터가 없어요');
+    setTimeout(hideDetectBanner, 2500);
+    return;
+  }
+  // Native Wi-Fi scan (Android via Capacitor) wins over simulation.
+  let scans;
+  let simCellIndex = null;
+  if (window.hasNativeScan && typeof window.nativeScan === 'function') {
+    try {
+      showDetectBanner('📡 Wi-Fi 스캔 중…');
+      scans = await window.nativeScan();
+    } catch (err) {
+      showDetectBanner('스캔 실패: ' + (err?.message || err));
+      setTimeout(hideDetectBanner, 2500);
+      return;
+    }
+    if (!scans || scans.length === 0) {
+      showDetectBanner('Wi-Fi 감지 결과 없음');
+      setTimeout(hideDetectBanner, 2500);
+      return;
+    }
+  } else {
+    const params = new URLSearchParams(location.search);
+    const simIdx = parseInt(params.get('simulate'), 10);
+    const cells = state.fingerprint.cells;
+    const cell = Number.isFinite(simIdx)
+      ? cells.find(c => c.index === simIdx) || cells[Math.floor(Math.random() * cells.length)]
+      : cells[Math.floor(Math.random() * cells.length)];
+    simCellIndex = cell.index;
+    scans = simulateScan(cell);
+  }
+  const fix = state.wp.match(scans);
+  if (!fix) {
+    showDetectBanner('매칭 실패 (공통 AP 부족)');
+    setTimeout(hideDetectBanner, 2500);
+    return;
+  }
+  const floorIdx = fpFloorToGraphIdx(fix.floor);
+  state.detected = { ...fix, floorIdx, simCellIndex };
+  if (floorIdx >= 0) selectFloor(floorIdx);
+  const hasGeo = state.floorTransforms?.has(floorIdx);
+  const floorMsg = floorIdx >= 0
+    ? `층: <b>${state.data.floors[floorIdx].floor}</b>`
+    : `층: <b>${fix.floor || '?'}</b> <span style="opacity:0.7">(미매핑)</span>`;
+  const geoMsg = floorIdx >= 0
+    ? (hasGeo ? '📐 georef' : '<span style="opacity:0.7">도면 미보정</span>')
+    : '';
+
+  // Auto-set 'from' by snapping to nearest graph node on detected floor
+  let snapInfo = '';
+  if (floorIdx >= 0 && hasGeo) {
+    const [rx, ry] = state.floorTransforms.get(floorIdx).project({ lat: fix.lat, lng: fix.lng });
+    const snapped = snapToNearestNode(floorIdx, rx, ry);
+    if (snapped) {
+      const floorLabel = state.data.floors[floorIdx].floor;
+      const nodeLabel = snapped.node.label || TYPE_KO[snapped.node.type] || snapped.node.id;
+      state.from = {
+        floor: floorIdx,
+        nodeId: snapped.node.id,
+        label: `📍 ${nodeLabel} 근처 · ${floorLabel}`,
+      };
+      state.routePath = null;
+      renderTBT(null);
+      updateSlots();
+      selectFloor(floorIdx);
+      snapInfo = ` → <b>${nodeLabel}</b>`;
+    }
+  }
+
+  showDetectBanner(
+    `📍 감지됨 · ${floorMsg} · 공통 AP ${fix.shared}개 · ` +
+    `신뢰도 ${(fix.confidence * 100).toFixed(0)}% · ${geoMsg}${snapInfo} ` +
+    `<span style="opacity:0.6">(sim cell ${cell.index})</span>`
+  );
+  draw();
+}
+
+// Overlay detected position on the current floor.
+// If a georef transform exists for this floor → project lat/lng to canvas.
+// Otherwise fall back to canvas center with a dashed "uncalibrated" ring.
+function drawDetected(ctx) {
+  if (!state.detected) return;
+  // If detection mapped to a specific graph floor, only render there.
+  // If unmapped (floorIdx = -1), render on whichever floor the user is viewing
+  // so the dot is never invisible.
+  if (state.detected.floorIdx >= 0 && state.detected.floorIdx !== state.floorIdx) return;
+
+  const c = $('canvas');
+  const transform = state.floorTransforms?.get(state.floorIdx);
+  let x, y, calibrated = false;
+  if (transform && state.detected.floorIdx === state.floorIdx) {
+    const [rx, ry] = transform.project({ lat: state.detected.lat, lng: state.detected.lng });
+    [x, y] = rel2canvas(rx, ry);
+    calibrated = true;
+  } else {
+    x = c.width / 2; y = c.height / 2;
+  }
+
+  const t = Date.now() / 400;
+  const pulse = (Math.sin(t) + 1) / 2;
+  const baseR = calibrated ? 8 : 10;
+  const haloR = calibrated ? 18 : 26;
+
+  // Halo
+  ctx.fillStyle = `rgba(74,163,255,${0.25 + pulse * 0.2})`;
+  ctx.beginPath(); ctx.arc(x, y, (haloR + pulse * 6) * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
+
+  // Dot
+  ctx.fillStyle = '#4aa3ff';
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3 * devicePixelRatio;
+  ctx.beginPath(); ctx.arc(x, y, baseR * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  // Uncalibrated marker: dashed outer ring
+  if (!calibrated) {
+    ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+    ctx.strokeStyle = 'rgba(255,212,0,0.8)';
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.beginPath(); ctx.arc(x, y, (haloR + 10) * devicePixelRatio, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ---------- wiring ----------
+$('slot-from').onclick = () => openPicker('from');
+$('slot-to').onclick = () => openPicker('to');
+$('modal-close').onclick = closePicker;
+$('modal').onclick = e => { if (e.target.id === 'modal') closePicker(); };
+$('go').onclick = runRouting;
+$('station').onchange = e => loadStation(e.target.value);
+$('detect').onclick = runDetection;
+window.addEventListener('resize', () => { fitImage(); draw(); });
+
+(async () => {
+  const files = await listStations();
+  const sel = $('station');
+  for (const f of files) {
+    const o = document.createElement('option');
+    o.value = f; o.textContent = f.replace(/\.json$/, '').replace(/^\d+_?/, '');
+    sel.appendChild(o);
+  }
+  if (!files.length) { alert('역 데이터가 없어요 (merged/ 비어있음)'); return; }
+  await loadStation(files[0]);
+})();
+</script>
+</body>
+</html>

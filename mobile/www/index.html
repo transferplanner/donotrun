@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>뛰지마 실내</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #0b0d10; color: #e6e9ef;
+      font-family: -apple-system, system-ui, sans-serif; }
+    main { display: flex; flex-direction: column; align-items: center; justify-content: center;
+      height: 100%; gap: 1rem; padding: 1.5rem; text-align: center; }
+    button { background: #2d6cdf; color: white; border: 0; padding: 0.9rem 1.4rem;
+      border-radius: 10px; font-size: 1rem; }
+    label { display: flex; gap: .5rem; align-items: center; color: #8a92a0; font-size: .9rem; }
+    .hint { color: #8a92a0; font-size: 0.85rem; max-width: 22rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <div style="font-size:1.1rem;">📡 뛰지마 실내 · Android</div>
+    <button id="start">시작</button>
+    <label>
+      <input type="checkbox" id="simMode" /> 시뮬레이션 모드 (Wi-Fi 없이 테스트)
+    </label>
+    <div class="hint">실제 모드는 역 안에서 Wi-Fi 스캔 권한이 필요합니다. 집에서는 시뮬레이션 모드로 흐름을 확인하세요.</div>
+  </main>
+  <script>
+    document.getElementById('start').addEventListener('click', () => {
+      const sim = document.getElementById('simMode').checked;
+      try { localStorage.setItem('dri.simMode', sim ? '1' : '0'); } catch {}
+      location.href = 'user.html';
+    });
+  </script>
+</body>
+</html>

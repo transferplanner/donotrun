@@ -1,0 +1,8 @@
+{
+  "name": "dont-run-indoor-location",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-side indoor positioning + pathfinding for subway stations.",
+  "main": "src/location/index.js"
+}

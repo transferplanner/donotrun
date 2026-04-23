@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>dont-run-indoor — review</title>
+<style>
+  :root {
+    --bg: #111;
+    --panel: #1c1c1e;
+    --text: #f4f4f5;
+    --muted: #8e8e93;
+    --accent: #4aa3ff;
+    --ok: #00d66b;
+    --warn: #ffd400;
+    --danger: #ff3040;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px -apple-system, system-ui, sans-serif; overflow: hidden; }
+  header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; background: var(--panel); border-bottom: 1px solid #333;
+  }
+  header button, header select {
+    background: #2c2c2e; color: var(--text); border: 1px solid #3a3a3c;
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit;
+  }
+  header button:hover { background: #3a3a3c; }
+  header button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+  header .status { flex: 1; color: var(--muted); font-size: 12px; padding-left: 12px; }
+  header .spacer { flex: 1; }
+  main { position: fixed; inset: 48px 300px 0 0; overflow: hidden; background: #000; }
+  canvas { display: block; cursor: crosshair; }
+  aside {
+    position: fixed; top: 48px; right: 0; bottom: 0; width: 300px;
+    background: var(--panel); border-left: 1px solid #333;
+    overflow-y: auto; padding: 12px;
+  }
+  aside h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  aside .group { margin-bottom: 16px; }
+  aside input, aside select {
+    width: 100%; background: #2c2c2e; color: var(--text); border: 1px solid #3a3a3c;
+    padding: 6px 8px; border-radius: 4px; font: inherit; margin-top: 4px;
+  }
+  aside label { font-size: 12px; color: var(--muted); }
+  .legend { display: grid; grid-template-columns: 14px auto; gap: 4px 8px; font-size: 12px; }
+  .legend .dot { width: 10px; height: 10px; border-radius: 50%; margin: 3px 0; border: 1px solid #000; }
+  .mode-add #canvas { cursor: copy; }
+  .mode-exit #canvas, .mode-route #canvas { cursor: crosshair; }
+  kbd { background: #2c2c2e; padding: 1px 6px; border-radius: 3px; font-size: 11px; border: 1px solid #3a3a3c; }
+  #tbt {
+    position: fixed; left: 16px; bottom: 16px; right: 316px;
+    background: rgba(28,28,30,0.95); border: 1px solid #3a3a3c; border-radius: 10px;
+    padding: 12px 16px; display: none; max-height: 40vh; overflow-y: auto;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+  }
+  #tbt.userview { right: 16px; }
+  #tbt .head { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  #tbt ol { margin: 0; padding-left: 22px; line-height: 1.7; }
+  #tbt .floor { color: var(--accent); font-weight: 600; }
+  #tbt .summary { margin-top: 8px; font-size: 12px; color: var(--muted); border-top: 1px solid #3a3a3c; padding-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <select id="stationSelect"></select>
+  <select id="floorSelect"></select>
+  <button id="addBtn">+ Add (A)</button>
+  <button id="delBtn">Delete</button>
+  <button id="routeBtn">Route (R)</button>
+  <button id="exitBtn">Nearest exit (E)</button>
+  <button id="userBtn">User view (U)</button>
+  <button id="saveBtn" class="primary">Save reviewed</button>
+  <div class="status" id="status">loading…</div>
+</header>
+<main><canvas id="canvas"></canvas></main>
+<div id="tbt"><div class="head">경로 안내</div><ol id="tbt-list"></ol><div class="summary" id="tbt-summary"></div></div>
+<aside>
+  <div class="group">
+    <h3>Selected node</h3>
+    <div id="sel-none" style="color:var(--muted);font-size:12px;">click a node</div>
+    <div id="sel-edit" style="display:none;">
+      <label>id<input id="fld-id" readonly></label>
+      <label>label<input id="fld-label"></label>
+      <label>type
+        <select id="fld-type">
+          <option>gate</option><option>exit</option>
+          <option>stair</option><option>escalator</option><option>elevator</option>
+          <option>corridor</option><option>junction</option>
+          <option>toilet</option><option>info</option><option>fare_machine</option>
+          <option>platform_edge</option><option>transfer_point</option>
+        </select>
+      </label>
+      <label>exit_no<input id="fld-exitno" type="number"></label>
+      <label>direction<input id="fld-dir" placeholder="상행|하행|내선|외선"></label>
+      <label>connects_floor
+        <select id="fld-cf"><option value="">—</option><option>B4</option><option>B3</option><option>B2</option><option>B1</option><option>1F</option><option>2F</option><option>3F</option></select>
+      </label>
+    </div>
+  </div>
+  <div class="group">
+    <h3>Shortcuts</h3>
+    <div style="font-size:12px;color:var(--muted);line-height:1.8;">
+      <kbd>A</kbd> add mode<br>
+      <kbd>Del</kbd>/<kbd>⌫</kbd> delete<br>
+      <kbd>⌘S</kbd> save<br>
+      drag to move · click empty to deselect
+    </div>
+  </div>
+  <div class="group">
+    <h3>Legend</h3>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="group">
+    <h3>Stats</h3>
+    <div id="stats" style="font-size:12px;color:var(--muted);"></div>
+  </div>
+</aside>
+
+<script type="module">
+  import { shortestPath } from '/static/location/pathfinding.js';
+  window.shortestPath = shortestPath;
+</script>
+<script>
+const TYPE_COLORS = {
+  gate: '#ffd400', exit: '#00d66b',
+  stair: '#4aa3ff', escalator: '#4aa3ff', elevator: '#a46bff',
+  corridor: '#ff8c4a', junction: '#ff8c4a',
+  toilet: '#ff4aa3', info: '#ffffff', fare_machine: '#bbbbbb',
+  platform_edge: '#ff3040', transfer_point: '#00d6c6',
+};
+const NODE_R = 8;
+
+const $ = id => document.getElementById(id);
+const state = {
+  stationFile: null,
+  data: null,
+  floorIdx: 0,
+  img: null,
+  imgW: 0, imgH: 0,
+  offsetX: 0, offsetY: 0, scale: 1,
+  selected: null,
+  mode: 'select',  // select | add | route | exit
+  drag: null,
+  graph: null,      // full graph with links (from /api/graph) — used by shortestPath
+  routeStart: null, // {floor, nodeId}
+  routeGoal: null,
+  routePath: null,  // {totalMeters, nodes}
+  userView: false,  // clean view for end-users
+};
+const KEY_TYPES = new Set(['stair','escalator','elevator','exit','gate','platform_edge','transfer_point']);
+
+function status(msg) { $('status').textContent = msg; }
+
+// ---------- data I/O ----------
+async function listStations() {
+  const r = await fetch('/api/stations');
+  return r.json();
+}
+async function loadStation(file) {
+  state.stationFile = file;
+  const r = await fetch('/api/station?f=' + encodeURIComponent(file));
+  state.data = await r.json();
+  // Graph for routing (final > reviewed > merged)
+  try {
+    const gr = await fetch('/api/graph?f=' + encodeURIComponent(file));
+    if (gr.ok) state.graph = await gr.json();
+  } catch {}
+  state.routeStart = state.routeGoal = state.routePath = null;
+  renderTBT(null);
+  populateFloorSelect();
+  await loadImage();
+  selectFloor(0);
+  const stage = state.graph?._source_stage || '?';
+  status(`loaded ${file}  ·  ${state.data.station_name}  ·  ${state.data.floors.length} floors  ·  graph=${stage}`);
+}
+async function save() {
+  if (!state.data) return;
+  const r = await fetch('/api/save?f=' + encodeURIComponent(state.stationFile), {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(state.data),
+  });
+  const j = await r.json();
+  status(j.saved ? `saved → ${j.saved}` : `save failed: ${j.error || 'unknown'}`);
+}
+
+// ---------- rendering ----------
+function loadImage() {
+  return new Promise(resolve => {
+    const src = state.data._source_image;
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.imgW = img.naturalWidth;
+      state.imgH = img.naturalHeight;
+      fitImage();
+      resolve();
+    };
+    img.onerror = () => { status('image load failed: ' + src); resolve(); };
+    img.src = '/api/image?f=' + encodeURIComponent(src);
+  });
+}
+function fitImage() {
+  const c = $('canvas');
+  const main = document.querySelector('main');
+  c.width = main.clientWidth;
+  c.height = main.clientHeight;
+  const s = Math.min(c.width / state.imgW, c.height / state.imgH) * 0.95;
+  state.scale = s;
+  state.offsetX = (c.width - state.imgW * s) / 2;
+  state.offsetY = (c.height - state.imgH * s) / 2;
+  draw();
+}
+function rel2canvas(rx, ry) {
+  return [state.offsetX + rx / 1000 * state.imgW * state.scale,
+          state.offsetY + ry / 1000 * state.imgH * state.scale];
+}
+function canvas2rel(cx, cy) {
+  return [(cx - state.offsetX) / state.scale / state.imgW * 1000,
+          (cy - state.offsetY) / state.scale / state.imgH * 1000];
+}
+function draw() {
+  const c = $('canvas');
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+  if (state.img) {
+    ctx.drawImage(state.img,
+      state.offsetX, state.offsetY,
+      state.imgW * state.scale, state.imgH * state.scale);
+  }
+  if (!state.data) return;
+  const floor = state.data.floors[state.floorIdx];
+  const byId = Object.fromEntries(floor.nodes.map(n => [n.id, n]));
+
+  // Which nodes to show? In user view, only route nodes on this floor.
+  const routeIds = state.routePath
+    ? new Set(state.routePath.nodes.filter(n => n._floor === state.floorIdx).map(n => n.id))
+    : null;
+  const visibleNodes = state.userView
+    ? floor.nodes.filter(n => routeIds?.has(n.id))
+    : floor.nodes;
+
+  // Links (intra-floor only) — hidden in user view (route line carries the info)
+  if (!state.userView) {
+    ctx.strokeStyle = 'rgba(74, 163, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    for (const l of floor.links || []) {
+      if (typeof l.to === 'string' && l.to.startsWith('F')) continue;
+      const a = byId[l.from], b = byId[l.to];
+      if (!a || !b) continue;
+      const [ax, ay] = rel2canvas(a.x, a.y);
+      const [bx, by] = rel2canvas(b.x, b.y);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    }
+  }
+
+  // Nodes
+  for (const n of visibleNodes) {
+    const [x, y] = rel2canvas(n.x, n.y);
+    const color = TYPE_COLORS[n.type] || '#4aa3ff';
+    if (n.id === state.selected) {
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(x, y, NODE_R + 4, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x, y, NODE_R, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    const showLabel = !state.userView || KEY_TYPES.has(n.type);
+    if (showLabel) {
+      ctx.fillStyle = '#fff';
+      ctx.font = state.userView ? 'bold 13px -apple-system, system-ui'
+                                 : 'bold 11px -apple-system, system-ui';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 3;
+      const label = n.label || n.id;
+      ctx.strokeText(label, x + NODE_R + 3, y);
+      ctx.fillText(label, x + NODE_R + 3, y);
+    }
+  }
+  drawRoute(ctx);
+  updateSidebar();
+}
+
+// ---------- interactions ----------
+function hitTest(cx, cy) {
+  const floor = state.data.floors[state.floorIdx];
+  for (const n of floor.nodes) {
+    const [x, y] = rel2canvas(n.x, n.y);
+    if ((cx-x)**2 + (cy-y)**2 <= (NODE_R + 4)**2) return n;
+  }
+  return null;
+}
+
+$('canvas').addEventListener('mousedown', e => {
+  const rect = e.target.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  if (state.mode === 'route') {
+    const hit = hitTest(cx, cy);
+    if (!hit) return;
+    const pick = { floor: state.floorIdx, nodeId: hit.id };
+    if (!state.routeStart) {
+      state.routeStart = pick;
+      state.routePath = null;
+      status(`route: start = ${hit.label || hit.id} (floor ${state.floorIdx}) — click goal`);
+    } else {
+      state.routeGoal = pick;
+      runRouting();
+    }
+    draw();
+    return;
+  }
+  if (state.mode === 'exit') {
+    const hit = hitTest(cx, cy);
+    if (!hit) return;
+    state.routeStart = { floor: state.floorIdx, nodeId: hit.id };
+    runNearestExit();
+    state.mode = 'select';
+    document.body.classList.remove('mode-exit');
+    draw();
+    return;
+  }
+  if (state.mode === 'add') {
+    const [rx, ry] = canvas2rel(cx, cy);
+    const floor = state.data.floors[state.floorIdx];
+    const id = 'n' + (floor.nodes.length + 1) + '_' + Date.now().toString(36).slice(-4);
+    floor.nodes.push({ id, type: 'corridor', label: id, x: rx, y: ry, meta: {} });
+    state.selected = id;
+    state.mode = 'select';
+    document.body.classList.remove('mode-add');
+    status(`added ${id}`);
+    draw();
+    return;
+  }
+  const hit = hitTest(cx, cy);
+  state.selected = hit?.id || null;
+  if (hit) state.drag = { id: hit.id, startX: cx, startY: cy };
+  draw();
+});
+$('canvas').addEventListener('mousemove', e => {
+  if (!state.drag) return;
+  const rect = e.target.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  const [rx, ry] = canvas2rel(cx, cy);
+  const floor = state.data.floors[state.floorIdx];
+  const n = floor.nodes.find(x => x.id === state.drag.id);
+  if (n) { n.x = rx; n.y = ry; draw(); }
+});
+document.addEventListener('mouseup', () => { state.drag = null; });
+
+// ---------- routing ----------
+function runRouting() {
+  if (!window.shortestPath) { status('routing module not loaded'); return; }
+  const g = state.graph || state.data;
+  if (!g) return;
+  try {
+    const res = window.shortestPath(g, state.routeStart, state.routeGoal);
+    if (!res) { status('no path'); state.routePath = null; renderTBT(null); return; }
+    state.routePath = res;
+    status(`route: ${res.totalMeters.toFixed(1)} m  ·  ${res.nodes.length} hops  `
+      + `(${state.routeStart.nodeId} → ${state.routeGoal.nodeId})`);
+    renderTBT(res);
+  } catch (e) {
+    status('routing error: ' + e.message);
+  }
+}
+
+function runNearestExit() {
+  if (!window.shortestPath) { status('routing module not loaded'); return; }
+  const g = state.graph || state.data;
+  if (!g || !state.routeStart) return;
+  // Collect all exit nodes across floors
+  const exits = [];
+  g.floors.forEach((f, fi) => {
+    for (const n of f.nodes) if (n.type === 'exit') exits.push({ floor: fi, nodeId: n.id, label: n.label });
+  });
+  if (!exits.length) { status('no exit nodes in graph'); return; }
+  let best = null;
+  for (const ex of exits) {
+    const res = window.shortestPath(g, state.routeStart, { floor: ex.floor, nodeId: ex.nodeId });
+    if (res && (!best || res.totalMeters < best.res.totalMeters)) best = { ex, res };
+  }
+  if (!best) { status('no reachable exit'); return; }
+  state.routeGoal = { floor: best.ex.floor, nodeId: best.ex.nodeId };
+  state.routePath = best.res;
+  status(`nearest exit: ${best.ex.label || best.ex.nodeId}  ·  ${best.res.totalMeters.toFixed(1)} m  ·  ${best.res.nodes.length} hops`);
+  renderTBT(best.res);
+}
+
+// ---------- turn-by-turn ----------
+const VERTICAL_KIND_KO = { stair: '계단', escalator: '에스컬레이터', elevator: '엘리베이터' };
+const TYPE_KO = {
+  gate: '개찰구', exit: '출구', stair: '계단', escalator: '에스컬레이터',
+  elevator: '엘리베이터', platform_edge: '승강장', transfer_point: '환승통로',
+  fare_machine: '발권기', toilet: '화장실', info: '안내소',
+  corridor: '통로', junction: '분기점',
+};
+function _floorLabel(fi) { return state.data?.floors?.[fi]?.floor ?? `F${fi}`; }
+function _nodeLabel(n) { return n.label || TYPE_KO[n.type] || n.id; }
+
+function buildInstructions(path) {
+  const nodes = path.nodes;
+  if (!nodes.length) return [];
+  const steps = [];
+  steps.push(`<b>출발</b> — ${_floorLabel(nodes[0]._floor)} · ${_nodeLabel(nodes[0])}`);
+
+  let walkMeters = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    const prev = nodes[i - 1], cur = nodes[i];
+    // Approximate segment length (graph stores ~100m-per-1000-grid scale; step4 weight is the truth but we don't have it per-hop here)
+    const dx = cur.x - prev.x, dy = cur.y - prev.y;
+    const seg = Math.sqrt(dx*dx + dy*dy) * 0.1; // grid units → m (scale_m=100)
+    if (cur._floor !== prev._floor) {
+      if (walkMeters > 3) steps.push(`직진 약 ${Math.round(walkMeters)} m`);
+      walkMeters = 0;
+      // Vertical transition — label from cur or prev whichever is vertical
+      const vert = [prev, cur].find(n => ['stair','escalator','elevator'].includes(n.type));
+      const kindKo = vert ? VERTICAL_KIND_KO[vert.type] : '수직이동';
+      const vertLabel = vert ? (vert.label || '') : '';
+      const fromF = _floorLabel(prev._floor), toF = _floorLabel(cur._floor);
+      steps.push(`${kindKo}${vertLabel ? ` (${vertLabel})` : ''} 로 <span class="floor">${fromF} → ${toF}</span>`);
+    } else {
+      walkMeters += seg;
+      // Emit landmark cue when we pass a notable node type mid-floor
+      if (KEY_TYPES.has(cur.type) && i !== nodes.length - 1) {
+        if (walkMeters > 3) { steps.push(`직진 약 ${Math.round(walkMeters)} m → ${TYPE_KO[cur.type] || cur.type} 지나서`); walkMeters = 0; }
+      }
+    }
+  }
+  if (walkMeters > 3) steps.push(`직진 약 ${Math.round(walkMeters)} m`);
+  const last = nodes[nodes.length - 1];
+  steps.push(`<b>도착</b> — ${_floorLabel(last._floor)} · ${_nodeLabel(last)}`);
+  return steps;
+}
+
+function renderTBT(path) {
+  const box = $('tbt');
+  if (!path) { box.style.display = 'none'; return; }
+  const list = $('tbt-list');
+  list.innerHTML = '';
+  for (const s of buildInstructions(path)) {
+    const li = document.createElement('li');
+    li.innerHTML = s;
+    list.appendChild(li);
+  }
+  $('tbt-summary').textContent =
+    `총 ${path.totalMeters.toFixed(1)} m · ${path.nodes.length} 노드 · `
+    + [...new Set(path.nodes.map(n => _floorLabel(n._floor)))].join(' → ');
+  box.style.display = 'block';
+  box.classList.toggle('userview', state.userView);
+}
+function drawRoute(ctx) {
+  if (!state.routePath) return;
+  // Connect consecutive path nodes on the current floor only
+  const pts = state.routePath.nodes
+    .filter(n => n._floor === state.floorIdx)
+    .map(n => rel2canvas(n.x, n.y));
+  if (pts.length < 2) return;
+  ctx.strokeStyle = '#ffd400';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.stroke();
+  // Start/goal markers
+  for (const n of state.routePath.nodes) {
+    if (n._floor !== state.floorIdx) continue;
+    if (n.id !== state.routeStart.nodeId && n.id !== state.routeGoal.nodeId) continue;
+    const [x, y] = rel2canvas(n.x, n.y);
+    ctx.fillStyle = n.id === state.routeStart.nodeId ? '#00d66b' : '#ff3040';
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
+// ---------- sidebar ----------
+function updateSidebar() {
+  const n = state.data?.floors[state.floorIdx]?.nodes.find(x => x.id === state.selected);
+  $('sel-none').style.display = n ? 'none' : 'block';
+  $('sel-edit').style.display = n ? 'block' : 'none';
+  if (n) {
+    $('fld-id').value = n.id;
+    $('fld-label').value = n.label || '';
+    $('fld-type').value = n.type || 'corridor';
+    const m = n.meta || {};
+    $('fld-exitno').value = m.exit_no ?? '';
+    $('fld-dir').value = m.direction || '';
+    $('fld-cf').value = m.connects_floor || '';
+  }
+  const floor = state.data?.floors[state.floorIdx];
+  if (floor) {
+    const types = {};
+    for (const n of floor.nodes) types[n.type] = (types[n.type]||0) + 1;
+    const linkCount = (floor.links||[]).length;
+    $('stats').innerHTML = `<b>${floor.nodes.length}</b> nodes · <b>${linkCount}</b> links<br>`
+      + Object.entries(types).map(([k,v])=>`${k}: ${v}`).join(', ');
+  }
+}
+for (const [id, prop] of [['fld-label','label'],['fld-type','type']]) {
+  $(id).addEventListener('change', e => {
+    const n = state.data.floors[state.floorIdx].nodes.find(x => x.id === state.selected);
+    if (n) { n[prop] = e.target.value; draw(); }
+  });
+}
+for (const [id, metaKey] of [['fld-exitno','exit_no'],['fld-dir','direction'],['fld-cf','connects_floor']]) {
+  $(id).addEventListener('change', e => {
+    const n = state.data.floors[state.floorIdx].nodes.find(x => x.id === state.selected);
+    if (!n) return;
+    n.meta = n.meta || {};
+    let v = e.target.value;
+    if (metaKey === 'exit_no') v = v === '' ? null : parseInt(v);
+    else if (!v) v = null;
+    n.meta[metaKey] = v;
+  });
+}
+
+// ---------- UI wiring ----------
+function populateStationSelect(files) {
+  const sel = $('stationSelect');
+  sel.innerHTML = '';
+  for (const f of files) {
+    const o = document.createElement('option');
+    o.value = f; o.textContent = f;
+    sel.appendChild(o);
+  }
+  sel.onchange = () => loadStation(sel.value);
+}
+function populateFloorSelect() {
+  const sel = $('floorSelect');
+  sel.innerHTML = '';
+  state.data.floors.forEach((f, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = `${f.floor} · ${f.role || ''}`;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => selectFloor(+sel.value);
+}
+function selectFloor(idx) {
+  state.floorIdx = idx;
+  state.selected = null;
+  $('floorSelect').value = idx;
+  draw();
+}
+function populateLegend() {
+  const el = $('legend');
+  for (const [k, v] of Object.entries(TYPE_COLORS)) {
+    const d = document.createElement('div');
+    d.className = 'dot'; d.style.background = v;
+    el.appendChild(d);
+    const l = document.createElement('div');
+    l.textContent = k;
+    el.appendChild(l);
+  }
+}
+
+$('addBtn').onclick = () => {
+  state.mode = 'add';
+  document.body.classList.add('mode-add');
+  status('click canvas to add a node');
+};
+$('delBtn').onclick = () => {
+  if (!state.selected) return;
+  const floor = state.data.floors[state.floorIdx];
+  floor.nodes = floor.nodes.filter(n => n.id !== state.selected);
+  floor.links = (floor.links||[]).filter(l => l.from !== state.selected && l.to !== state.selected);
+  state.selected = null;
+  draw();
+};
+$('routeBtn').onclick = () => {
+  state.mode = 'route';
+  state.routeStart = state.routeGoal = state.routePath = null;
+  document.body.classList.remove('mode-add');
+  status('route: click START node');
+  draw();
+};
+$('userBtn').onclick = () => {
+  state.userView = !state.userView;
+  $('userBtn').classList.toggle('primary', state.userView);
+  document.querySelector('aside').style.display = state.userView ? 'none' : 'block';
+  document.querySelector('main').style.right = state.userView ? '0' : '300px';
+  $('tbt').classList.toggle('userview', state.userView);
+  if (state.img) fitImage(); else draw();
+  status(state.userView
+    ? (state.routePath ? 'user view' : 'user view — press E for nearest exit')
+    : 'reviewer view');
+};
+$('exitBtn').onclick = () => {
+  state.mode = 'exit';
+  state.routeStart = state.routeGoal = state.routePath = null;
+  renderTBT(null);
+  document.body.classList.remove('mode-add');
+  document.body.classList.add('mode-exit');
+  status('nearest exit: click YOUR location');
+  draw();
+};
+$('saveBtn').onclick = save;
+
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'a' || e.key === 'A') $('addBtn').click();
+  else if (e.key === 'r' || e.key === 'R') $('routeBtn').click();
+  else if (e.key === 'e' || e.key === 'E') $('exitBtn').click();
+  else if (e.key === 'u' || e.key === 'U') $('userBtn').click();
+  else if (e.key === 'Escape') {
+    state.mode = 'select';
+    state.routeStart = state.routeGoal = state.routePath = null;
+    document.body.classList.remove('mode-add', 'mode-exit');
+    renderTBT(null);
+    status('idle'); draw();
+  }
+  else if (e.key === 'Delete' || e.key === 'Backspace') $('delBtn').click();
+  else if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); save(); }
+});
+window.addEventListener('resize', () => { if (state.img) fitImage(); });
+
+(async () => {
+  populateLegend();
+  const resp = await listStations();
+  const files = resp.files || [];
+  if (!files.length) { status('no merged/ files found'); return; }
+  populateStationSelect(files);
+  $('stationSelect').value = files[0];
+  await loadStation(files[0]);
+})();
+</script>
+</body>
+</html>
