@@ -6,9 +6,9 @@ indoor/.env
 node_modules/
 .DS_Store
 
-# data: kept out of public repo (secrets-adjacent) — regenerate via pipeline
+# indoor data: kept out of public repo (secrets-adjacent) — regenerate via pipeline
 indoor/data/
-data/
+/data/
 
 # Android build artifacts
 indoor/mobile/android/.gradle/

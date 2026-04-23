@@ -500,3 +500,59 @@ function _startGpsTracking() {
 function _stopGpsTracking() {
   if (_gpsWatchId !== null) { navigator.geolocation.clearWatch(_gpsWatchId); _gpsWatchId = null }
 }
+
+// ── 지하철 내부 보기 ───────────────────────────────────────────────────
+// 현재 선택된 경로의 첫 지하철 탑승역을 indoor navigation UI 로 넘긴다.
+// indoor UI 는 별도 웹앱(indoor/) 으로 빌드되고, 여기서는 현재 역 이름을
+// URL 파라미터로 넘겨 오버레이 iframe 에 띄운다.
+const INDOOR_SUPPORTED_STATIONS = new Set(['강남', '강남역', '수유', '수유역', '잠실', '잠실역'])
+
+function openIndoorView() {
+  const route = _session.routes[_session.mapRouteIdx] ?? _session.routes[0]
+  if (!route) { alert('경로가 없어 지하철 내부 보기를 열 수 없어요.'); return }
+
+  const firstTransit = route.segments.find(s => s.type === 'subway')
+  if (!firstTransit) { alert('이 경로엔 지하철 구간이 없어요.'); return }
+
+  const rawName = String(firstTransit.startName || '').trim()
+  const norm    = rawName.replace(/역$/, '')
+  if (!INDOOR_SUPPORTED_STATIONS.has(rawName) && !INDOOR_SUPPORTED_STATIONS.has(norm)) {
+    alert(`${rawName}역은 아직 지하철 내부 지도 데이터가 없어요.\n지원: 강남, 수유, 잠실`)
+    return
+  }
+
+  // MVP: 실제 indoor UI 연결 전, 스텁 오버레이로 대상 역만 먼저 보여준다.
+  _showIndoorStub(norm || rawName)
+}
+
+function _showIndoorStub(stationName) {
+  let ov = document.getElementById('indoor-overlay')
+  if (!ov) {
+    ov = document.createElement('div')
+    ov.id = 'indoor-overlay'
+    ov.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9999',
+      'background:#000', 'color:#fff',
+      'display:flex', 'flex-direction:column',
+      'font-family:inherit',
+    ].join(';')
+    ov.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;background:#111;border-bottom:1px solid #333">
+        <button id="indoor-overlay-close" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer;padding:4px 8px">←</button>
+        <span id="indoor-overlay-title" style="font-size:17px;font-weight:600">지하철 내부 보기</span>
+      </div>
+      <div id="indoor-overlay-body" style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;line-height:1.6">
+        <div></div>
+      </div>`
+    document.body.appendChild(ov)
+    ov.querySelector('#indoor-overlay-close').addEventListener('click', () => ov.remove())
+  }
+  ov.querySelector('#indoor-overlay-title').textContent = `${stationName}역 내부`
+  ov.querySelector('#indoor-overlay-body > div').innerHTML = `
+    <div style="font-size:48px;margin-bottom:16px">🚇</div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:8px">${stationName}역 실내 지도 준비 중</div>
+    <div style="font-size:14px;color:#aaa;max-width:280px">
+      WiFi 측위 기반 실내 경로 안내가 곧 연결됩니다.<br>
+      (indoor/mobile 빌드 → 이 화면 대체 예정)
+    </div>`
+}
